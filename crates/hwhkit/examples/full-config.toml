@@ -1,0 +1,45 @@
+# HwhKit 全栈服务器配置示例（前后端不分离架构）
+
+[server]
+host = "0.0.0.0"
+port = 8080
+architecture = "full"  # 前后端不分离架构
+
+[middleware]
+
+# CORS 配置（通常在全栈模式下不需要）
+[middleware.cors]
+enabled = false
+origins = ["*"]
+methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+headers = ["*"]
+
+# JWT 认证配置
+[middleware.jwt]
+enabled = true
+secret = "your-super-secure-jwt-secret-key-change-this-in-production"
+expires_in = 86400  # 24小时
+
+# 静态文件服务
+[middleware.static_files]
+enabled = true
+dir = "examples/static"
+prefix = "/static"
+
+# 模板配置
+[middleware.templates]
+enabled = true
+dir = "examples/templates"
+extension = "html"
+
+# 日志配置
+[middleware.logging]
+level = "info"
+requests = true
+
+# 自定义配置
+[middleware.custom]
+app_name = "HwhKit 全栈应用"
+version = "1.0.0"
+session_secret = "your-session-secret-key"
+database_url = "sqlite:app.db"

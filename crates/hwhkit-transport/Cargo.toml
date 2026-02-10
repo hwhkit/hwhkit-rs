@@ -1,0 +1,21 @@
+[package]
+name = "hwhkit-transport"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HwhKit gRPC/RPC/WebSocket/P2P 传输层"
+
+[features]
+default = []
+grpc = []
+ws = []
+p2p = []
+
+[dependencies]
+async-trait.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true

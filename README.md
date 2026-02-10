@@ -1,311 +1,257 @@
-# HwhKit 🚀
+# HwhKit
 
-一个用于快速构建 Web 服务的 Rust 工具库，支持前后端分离和不分离两种架构。
+HwhKit 是一个面向 Rust Web 服务的工程化脚手架库，目标是把不变的基础设施沉淀到框架层，让业务项目只保留最小可变部分。
 
-[![Crates.io](https://img.shields.io/crates/v/hwhkit.svg)](https://crates.io/crates/hwhkit)
-[![Documentation](https://docs.rs/hwhkit/badge.svg)](https://docs.rs/hwhkit)
-[![License: MIT OR Apache-2.0](https://img.shields.io/badge/License-MIT%20OR%20Apache--2.0-blue.svg)](https://opensource.org/licenses/MIT)
+当前仓库已升级为 workspace 架构（`0.2.0-alpha.2`），提供：
 
-## ✨ 特性
+1. 兼容层：原有 `WebServerBuilder`（v1 风格）继续可用。
+2. 新架构：`config-v2 + core-v2 + run_v2` 启动管线。
+3. CLI：`cargo hwhkit init` 生成标准项目模板。
 
-- 🚀 **一键构建** - 通过简单的构建器模式快速创建 Web 服务
-- 🏗️ **双架构支持** - 支持前后端分离(API)和不分离(全栈)两种架构
-- ⚙️ **配置驱动** - 基于 TOML 配置文件的中间件装载机制
-- 🔧 **丰富中间件** - 内置 CORS、JWT、静态文件、模板渲染等中间件
-- ⚡ **高性能** - 基于 Axum 和 Tokio 构建，性能卓越
-- 🎨 **模板支持** - 内置 Tera 模板引擎支持（可选）
-- 📝 **类型安全** - 完全的 Rust 类型安全保障
+## 当前能力（按代码现状）
 
-## 🛠️ 安装
+1. workspace 分层拆包：`hwhkit-config`、`hwhkit-core`、`hwhkit-observability`、`hwhkit-transport`、`hwhkit-macros`、`hwhkit-integration-*`、`cargo-hwhkit`。
+2. 配置分层加载：`config/default.toml -> config/{env}.toml -> ENV(HWHKIT__) -> remote patch`。
+3. 严格校验：配置合法性 + feature/config 一致性校验。
+4. 首批集成 provider：`postgres/redis/mongodb/nats/qdrant/neo4j`（当前为初始化骨架与参数校验、Handle 注入）。
+5. 传输层抽象：`RPC/EventBus/WebSocket/P2P` 配置模型与接口；`MemoryEventBus` 可用。
+6. 模板初始化：`minimal-api`、`api-grpc`、`realtime-event`。
 
-将以下内容添加到你的 `Cargo.toml`：
+## 仓库结构
+
+```text
+hwhkit-rs/
+  crates/
+    hwhkit/                         # facade：对外唯一依赖入口
+    hwhkit-config/                  # 配置加载/合并/校验
+    hwhkit-core/                    # bootstrap/Application/IntegrationProvider
+    hwhkit-observability/           # logging/tracing 初始化
+    hwhkit-transport/               # gRPC/RPC/WS/P2P 抽象层
+    hwhkit-macros/                  # proc-macro 预留
+    hwhkit-integration-postgres/
+    hwhkit-integration-redis/
+    hwhkit-integration-mongodb/
+    hwhkit-integration-nats/
+    hwhkit-integration-qdrant/
+    hwhkit-integration-neo4j/
+    cargo-hwhkit/                   # cargo hwhkit init
+  src/                              # facade 兼容入口（v1 + v2 re-export）
+  templates/                        # 模板目录
+  examples/
+  doc/
+```
+
+## Feature 概览（`crates/hwhkit/Cargo.toml`）
+
+基础：
+
+- `templates`
+- `jwt`
+- `config-v2`
+- `macros`
+
+传输：
+
+- `transport-grpc`
+- `transport-ws`
+- `transport-p2p`
+
+集成：
+
+- `postgres`
+- `redis`
+- `mongodb`
+- `nats`
+- `qdrant`
+- `neo4j`
+
+聚合：
+
+- `full`
+
+## 安装与使用
+
+### 1) 作为库使用（推荐）
 
 ```toml
 [dependencies]
-hwhkit = "0.1.0"
-tokio = { version = "1.0", features = ["full"] }
-
-# 可选特性
-hwhkit = { version = "0.1.0", features = ["templates", "jwt"] }
+async-trait = "0.1"
+tokio = { version = "1", features = ["full"] }
+hwhkit = { version = "0.2.0-alpha.2", features = [
+  "config-v2",
+  "transport-grpc",
+  "transport-ws",
+  "postgres",
+  "redis",
+  "mongodb",
+  "nats",
+  "qdrant",
+  "neo4j"
+] }
 ```
 
-### 可用特性
+### 2) 使用脚手架命令
 
-- `templates` - 启用 Tera 模板引擎支持
-- `jwt` - 启用 JWT 认证支持
-- `full` - 启用所有特性
+本仓库内开发：
 
-## 📚 快速开始
+```bash
+cargo run -p cargo-hwhkit -- init my-service --template minimal-api
+```
 
-### 前后端分离架构（API 模式）
+安装为 cargo 子命令后：
+
+```bash
+cargo install --path crates/cargo-hwhkit
+cargo hwhkit init my-service --template api-grpc
+```
+
+## 快速开始（v2）
 
 ```rust
-use hwhkit::{WebServerBuilder, get, Json, Serialize};
+use async_trait::async_trait;
+use hwhkit::{
+    config_v2::{AppConfig, BootstrapConfig},
+    core_v2::{AppContext, Application, Result},
+    get, run_v2, Router,
+};
 
-#[derive(Serialize)]
-struct ApiResponse {
-    message: String,
-    status: String,
+struct App;
+
+#[async_trait]
+impl Application for App {
+    async fn build_router(&self, _ctx: AppContext, _cfg: &AppConfig) -> Result<Router> {
+        Ok(Router::new().route("/healthz", get(health)))
+    }
 }
 
-async fn hello_world() -> Json<ApiResponse> {
-    Json(ApiResponse {
-        message: "Hello, World!".to_string(),
-        status: "success".to_string(),
-    })
+async fn health() -> &'static str {
+    "ok"
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let app = hwhkit::Router::new()
-        .route("/", get(hello_world));
+async fn main() {
+    let bootstrap = BootstrapConfig::default();
+    let built = run_v2(App, bootstrap).await.expect("bootstrap failed");
 
-    let server = WebServerBuilder::new()
-        .listen("0.0.0.0", 3000)
-        .cors(vec!["http://localhost:3000".to_string()])
-        .routes(app)
-        .build()
-        .await?;
+    println!("applied_sources = {:?}", built.applied_sources);
+    println!("initialized_integrations = {:?}", built.initialized_integrations);
+    println!("degraded_integrations = {:?}", built.degraded_integrations);
 
-    server.serve().await?;
-    Ok(())
+    // built.router 可继续接入你自己的 server runtime
 }
 ```
 
-### 前后端不分离架构（全栈模式）
+## 配置示例（v2）
 
-```rust
-use hwhkit::{WebServerBuilder, get, Html, ArchitectureType};
-
-async fn index() -> Html<&'static str> {
-    Html("<h1>欢迎使用 HwhKit!</h1>")
-}
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let app = hwhkit::Router::new()
-        .route("/", get(index));
-
-    let server = WebServerBuilder::new()
-        .listen("0.0.0.0", 8080)
-        .architecture(ArchitectureType::Full)
-        .static_files("static", "/static")
-        .templates("templates", "html")
-        .routes(app)
-        .build()
-        .await?;
-
-    server.serve().await?;
-    Ok(())
-}
-```
-
-### 使用配置文件
-
-创建 `config.toml`：
+`config/default.toml`：
 
 ```toml
 [server]
 host = "0.0.0.0"
 port = 3000
-architecture = "api"
 
-[middleware.cors]
-enabled = true
-origins = ["*"]
-methods = ["GET", "POST", "PUT", "DELETE"]
-headers = ["Content-Type", "Authorization"]
+[observability]
+service_name = "my-service"
+environment = "dev"
 
-[middleware.jwt]
-enabled = true
-secret = "your-secret-key"
-expires_in = 3600
-
-[middleware.static_files]
-enabled = true
-dir = "public"
-prefix = "/static"
-
-[middleware.logging]
+[observability.logging]
 level = "info"
-requests = true
+format = "pretty"
+
+[integrations.sql.postgres]
+enabled = true
+required = true
+url = "postgres://postgres:postgres@127.0.0.1:5432/app"
+max_connections = 20
+
+[integrations.redis]
+enabled = true
+required = false
+url = "redis://127.0.0.1:6379"
+
+[integrations.mongodb]
+enabled = false
+required = false
+url = "mongodb://127.0.0.1:27017"
+database = "app"
+
+[integrations.messaging.nats]
+enabled = false
+required = false
+url = "nats://127.0.0.1:4222"
+
+[integrations.vector.qdrant]
+enabled = false
+required = false
+url = "http://127.0.0.1:6334"
+api_key = ""
+
+[integrations.neo4j]
+enabled = false
+required = false
+url = "bolt://127.0.0.1:7687"
+username = "neo4j"
+password = "password"
+
+[transport.grpc]
+enabled = false
+listen = "0.0.0.0:50051"
+
+[transport.rpc]
+enabled = false
+default = "grpc"
+timeout_ms = 3000
+
+[transport.websocket]
+enabled = false
+path = "/ws"
+max_connections = 10000
+heartbeat_seconds = 20
 ```
 
-然后在代码中使用：
+## 兼容模式（v1）
+
+原有 `WebServerBuilder` 仍可使用：
 
 ```rust
 use hwhkit::WebServerBuilder;
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     let server = WebServerBuilder::new()
         .config_from_file("config.toml")
         .build()
-        .await?;
+        .await
+        .expect("failed to build");
 
-    server.serve().await?;
-    Ok(())
+    server.serve().await.expect("failed to serve");
 }
 ```
 
-## 🎯 架构类型
+## 质量状态
 
-### API 架构（前后端分离）
-
-适用于构建 RESTful API 服务：
-
-- ✅ CORS 支持
-- ✅ JSON 响应
-- ✅ JWT 认证
-- ✅ 静态文件服务
-- ❌ 模板渲染
-
-### Full 架构（前后端不分离）
-
-适用于构建传统的全栈 Web 应用：
-
-- ✅ 模板渲染
-- ✅ 静态文件服务
-- ✅ 表单处理
-- ✅ 会话管理
-- ⚠️ CORS（通常不需要）
-
-## 🔧 中间件配置
-
-### CORS
-
-```toml
-[middleware.cors]
-enabled = true
-origins = ["http://localhost:3000", "https://yourdomain.com"]
-methods = ["GET", "POST", "PUT", "DELETE"]
-headers = ["Content-Type", "Authorization"]
-```
-
-### JWT 认证
-
-```toml
-[middleware.jwt]
-enabled = true
-secret = "your-super-secure-secret-key"
-expires_in = 3600  # 1小时
-```
-
-### 静态文件
-
-```toml
-[middleware.static_files]
-enabled = true
-dir = "public"  # 静态文件目录
-prefix = "/static"  # URL 前缀
-```
-
-### 模板引擎
-
-```toml
-[middleware.templates]
-enabled = true
-dir = "templates"  # 模板文件目录
-extension = "html"  # 模板文件扩展名
-```
-
-### 日志
-
-```toml
-[middleware.logging]
-level = "info"  # trace, debug, info, warn, error
-requests = true  # 启用请求日志
-```
-
-## 📖 示例
-
-查看 `examples/` 目录获取完整示例：
-
-- [`api-server.rs`](examples/api-server.rs) - 前后端分离架构示例
-- [`full-server.rs`](examples/full-server.rs) - 前后端不分离架构示例
-
-运行示例：
+已通过的关键测试：
 
 ```bash
-# API 服务器示例
-cargo run --example api-server
-
-# 全栈服务器示例
-cargo run --example full-server
+cargo test -p hwhkit-config -p hwhkit-core -p hwhkit-transport -p cargo-hwhkit -p hwhkit
 ```
 
-## 🧪 测试
+## 文档
 
-运行所有测试：
+- 执行方案：`doc/2026-02-09-05-execution-plan-confirmed.md`
+- 执行进度：`doc/2026-02-09-06-execution-progress.md`
+- 架构路线：`doc/2026-02-09-01-architecture-roadmap-v2.md`
+- Golden Path：`doc/2026-02-09-02-golden-path-extreme-performance.md`
+- 协议网格：`doc/2026-02-09-03-transport-and-protocol-mesh.md`
+- 结构方案：`doc/2026-02-09-04-structure-options.md`
+- 项目指南：`doc/guides/QUICK_START.md`、`doc/guides/CONTRIBUTING.md`
 
-```bash
-cargo test
-```
+## 当前边界说明
 
-运行特定特性的测试：
+1. `hwhkit-integration-*` 当前是 provider 骨架与参数校验层，真实驱动深度接入在后续阶段推进。
+2. `hwhkit-transport` 当前提供稳定抽象与可测试基础实现，`tonic/async-nats/axum ws` 的完整运行时实现仍在计划中。
+3. `transport-p2p` 保持 experimental。
 
-```bash
-cargo test --features "templates,jwt"
-```
+## License
 
-## 📋 路线图
-
-- [x] 基本 Web 服务器构建
-- [x] 配置文件支持
-- [x] CORS 中间件
-- [x] 静态文件服务
-- [x] 基础模板支持
-- [x] JWT 认证框架
-- [ ] 数据库集成
-- [ ] WebSocket 支持
-- [ ] 请求限流
-- [ ] 缓存中间件
-- [ ] 监控和指标
-- [ ] 热重载开发模式
-
-## 🤝 贡献
-
-欢迎贡献代码！请查看 [CONTRIBUTING.md](CONTRIBUTING.md) 了解详细信息。
-
-### 开发环境设置
-
-```bash
-# 克隆仓库
-git clone https://github.com/yourusername/hwhkit.git
-cd hwhkit
-
-# 安装依赖
-cargo build
-
-# 运行测试
-cargo test
-
-# 运行示例
-cargo run --example api-server
-```
-
-## 📄 许可证
-
-本项目使用 [MIT](LICENSE-MIT) 或 [Apache-2.0](LICENSE-APACHE) 许可证。
-
-## 🙋 支持
-
-- 📖 [文档](https://docs.rs/hwhkit)
-- 🐛 [问题反馈](https://github.com/yourusername/hwhkit/issues)
-- 💬 [讨论](https://github.com/yourusername/hwhkit/discussions)
-
-## 🌟 致谢
-
-感谢以下项目为 HwhKit 提供了灵感和基础：
-
-- [Axum](https://github.com/tokio-rs/axum) - 现代异步 Web 框架
-- [Tower](https://github.com/tower-rs/tower) - 模块化网络服务
-- [Tera](https://github.com/Keats/tera) - 模板引擎
-- [Serde](https://github.com/serde-rs/serde) - 序列化框架
-
----
-
-<div align="center">
-  <p>用 ❤️ 和 🦀 制作</p>
-  <p>如果这个项目对你有帮助，请给我们一个 ⭐</p>
-</div>
+MIT OR Apache-2.0

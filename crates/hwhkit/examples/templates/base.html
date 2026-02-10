@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title }} - HwhKit</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar">
+            <div class="nav-brand">
+                <h1>{{ app_name | default(value="HwhKit") }}</h1>
+            </div>
+            <ul class="nav-links">
+                <li><a href="/">首页</a></li>
+                <li><a href="/users">用户</a></li>
+                <li><a href="/about">关于</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main class="container">
+        {% block content %}
+        <h1>欢迎使用 HwhKit!</h1>
+        <p>这是一个基于 Rust 的 Web 框架演示。</p>
+        {% endblock content %}
+    </main>
+
+    <footer>
+        <p>&copy; 2024 HwhKit. 版本: {{ version | default(value="1.0.0") }}</p>
+    </footer>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>

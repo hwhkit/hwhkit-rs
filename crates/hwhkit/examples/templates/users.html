@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="page-header">
+    <h1>👥 用户管理</h1>
+    <p>管理系统中的所有用户</p>
+</div>
+
+<div class="users-section">
+    <div class="section-header">
+        <h2>用户列表</h2>
+        <button class="btn btn-primary" onclick="showAddUserForm()">添加用户</button>
+    </div>
+
+    <div class="users-grid">
+        {% for user in users %}
+        <div class="user-card">
+            <div class="user-avatar">
+                <span>{{ user.name | first | upper }}</span>
+            </div>
+            <div class="user-info">
+                <h3>{{ user.name }}</h3>
+                <p>{{ user.email }}</p>
+                <small>ID: {{ user.id }}</small>
+            </div>
+            <div class="user-actions">
+                <button class="btn btn-sm btn-edit" onclick="editUser({{ user.id }})">编辑</button>
+                <button class="btn btn-sm btn-delete" onclick="deleteUser({{ user.id }})">删除</button>
+            </div>
+        </div>
+        {% endfor %}
+        
+        {% if users | length == 0 %}
+        <div class="empty-state">
+            <p>暂无用户数据</p>
+            <button class="btn btn-primary" onclick="showAddUserForm()">添加第一个用户</button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 添加用户表单模态框 -->
+<div id="addUserModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3>添加新用户</h3>
+            <button class="modal-close" onclick="hideAddUserForm()">&times;</button>
+        </div>
+        <form id="addUserForm" onsubmit="addUser(event)">
+            <div class="form-group">
+                <label for="userName">姓名:</label>
+                <input type="text" id="userName" name="name" required>
+            </div>
+            <div class="form-group">
+                <label for="userEmail">邮箱:</label>
+                <input type="email" id="userEmail" name="email" required>
+            </div>
+            <div class="form-actions">
+                <button type="button" class="btn btn-secondary" onclick="hideAddUserForm()">取消</button>
+                <button type="submit" class="btn btn-primary">添加用户</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+function showAddUserForm() {
+    document.getElementById('addUserModal').style.display = 'block';
+}
+
+function hideAddUserForm() {
+    document.getElementById('addUserModal').style.display = 'none';
+    document.getElementById('addUserForm').reset();
+}
+
+async function addUser(event) {
+    event.preventDefault();
+    const formData = new FormData(event.target);
+    const userData = {
+        name: formData.get('name'),
+        email: formData.get('email')
+    };
+
+    try {
+        const response = await fetch('/api/v1/users', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(userData)
+        });
+
+        if (response.ok) {
+            hideAddUserForm();
+            location.reload(); // 刷新页面显示新用户
+        } else {
+            alert('添加用户失败');
+        }
+    } catch (error) {
+        alert('添加用户时发生错误');
+    }
+}
+
+function editUser(userId) {
+    // 实现编辑功能
+    alert(`编辑用户 ${userId} 的功能待实现`);
+}
+
+function deleteUser(userId) {
+    if (confirm('确定要删除这个用户吗？')) {
+        // 实现删除功能
+        alert(`删除用户 ${userId} 的功能待实现`);
+    }
+}
+</script>
+{% endblock content %}

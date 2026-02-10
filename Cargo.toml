@@ -1,50 +1,39 @@
-[package]
-name = "hwhkit"
-version = "0.1.1"
+[workspace]
+members = [
+    "crates/hwhkit",
+    "crates/hwhkit-config",
+    "crates/hwhkit-core",
+    "crates/hwhkit-observability",
+    "crates/hwhkit-transport",
+    "crates/hwhkit-macros",
+    "crates/hwhkit-integration-postgres",
+    "crates/hwhkit-integration-redis",
+    "crates/hwhkit-integration-mongodb",
+    "crates/hwhkit-integration-nats",
+    "crates/hwhkit-integration-qdrant",
+    "crates/hwhkit-integration-neo4j",
+    "crates/cargo-hwhkit",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.2.0-alpha.2"
 edition = "2021"
 authors = ["louishwh"]
-description = "一个用于快速构建 Web 服务的 Rust 工具库"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/louishwh/hwhkit-rs"
 homepage = "https://louishwh.tech"
-readme = "README.md"
-keywords = ["web", "framework", "axum", "middleware", "builder"]
-categories = ["web-programming", "web-programming::http-server"]
 
-[dependencies]
+[workspace.dependencies]
+anyhow = "1.0"
+async-trait = "0.1"
 axum = "0.7"
-tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+thiserror = "1.0"
+tokio = { version = "1.0", features = ["full"] }
 toml = "0.8"
 tower = { version = "0.4", features = ["util"] }
 tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-thiserror = "1.0"
-anyhow = "1.0"
-tera = { version = "1.19", optional = true }
-jsonwebtoken = { version = "9.2", optional = true }
-chrono = { version = "0.4", features = ["serde"], optional = true }
-tempfile = { version = "3.8", optional = true }
-
-[features]
-default = []
-templates = ["tera"]
-jwt = ["jsonwebtoken", "chrono"]
-testing = ["tempfile"]
-full = ["templates", "jwt"]
-
-[dev-dependencies]
-tempfile = "3.8"
-tokio-test = "0.4"
-chrono = { version = "0.4", features = ["serde"] }
-
-# 示例项目配置
-[[example]]
-name = "api-server"
-path = "examples/api-server.rs"
-
-[[example]]
-name = "full-server"
-path = "examples/full-server.rs"

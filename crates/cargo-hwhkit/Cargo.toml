@@ -1,0 +1,17 @@
+[package]
+name = "cargo-hwhkit"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "cargo hwhkit init 命令"
+
+[[bin]]
+name = "cargo-hwhkit"
+path = "src/main.rs"
+
+[dependencies]
+anyhow.workspace = true
+clap = { version = "4.5", features = ["derive"] }

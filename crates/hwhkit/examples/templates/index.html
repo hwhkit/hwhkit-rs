@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero">
+    <h1>🚀 欢迎使用 HwhKit</h1>
+    <p class="subtitle">一个强大且易用的 Rust Web 框架</p>
+    
+    <div class="features">
+        <div class="feature-card">
+            <h3>⚡ 高性能</h3>
+            <p>基于 Axum 和 Tokio，提供出色的性能表现</p>
+        </div>
+        
+        <div class="feature-card">
+            <h3>🛠️ 易于使用</h3>
+            <p>简单的配置和构建器模式，快速上手</p>
+        </div>
+        
+        <div class="feature-card">
+            <h3>🔧 可扩展</h3>
+            <p>丰富的中间件支持，满足各种开发需求</p>
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat">
+            <span class="stat-number">{{ users_count | default(value=0) }}</span>
+            <span class="stat-label">注册用户</span>
+        </div>
+        
+        <div class="stat">
+            <span class="stat-number">{{ requests_count | default(value=0) }}</span>
+            <span class="stat-label">处理请求</span>
+        </div>
+        
+        <div class="stat">
+            <span class="stat-number">{{ uptime | default(value="0d") }}</span>
+            <span class="stat-label">运行时间</span>
+        </div>
+    </div>
+
+    <div class="actions">
+        <a href="/users" class="btn btn-primary">查看用户</a>
+        <a href="/api/v1/health" class="btn btn-secondary">API 状态</a>
+    </div>
+</div>
+{% endblock content %}

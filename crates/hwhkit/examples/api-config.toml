@@ -1,0 +1,45 @@
+# HwhKit API 服务器配置示例（前后端分离架构）
+
+[server]
+host = "0.0.0.0"
+port = 3000
+architecture = "api"  # 前后端分离架构
+
+[middleware]
+
+# CORS 配置
+[middleware.cors]
+enabled = true
+origins = ["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"]
+methods = ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"]
+headers = ["Content-Type", "Authorization", "X-Requested-With"]
+
+# JWT 认证配置
+[middleware.jwt]
+enabled = true
+secret = "your-super-secure-jwt-secret-key-change-this-in-production"
+expires_in = 3600  # 1小时
+
+# 静态文件服务（可选）
+[middleware.static_files]
+enabled = true
+dir = "public"
+prefix = "/static"
+
+# 模板配置（API 模式下禁用）
+[middleware.templates]
+enabled = false
+dir = "templates"
+extension = "html"
+
+# 日志配置
+[middleware.logging]
+level = "info"
+requests = true
+
+# 自定义配置
+[middleware.custom]
+app_name = "HwhKit API Server"
+version = "1.0.0"
+enable_swagger = true
+database_url = "postgresql://localhost/myapp"

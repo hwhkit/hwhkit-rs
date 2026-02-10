@@ -1,0 +1,19 @@
+[package]
+name = "hwhkit-core"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HwhKit 启动管线与核心运行时抽象"
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+axum.workspace = true
+hwhkit-config = { version = "0.2.0-alpha.2", path = "../hwhkit-config" }
+thiserror.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true

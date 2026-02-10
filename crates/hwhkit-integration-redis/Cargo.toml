@@ -1,0 +1,15 @@
+[package]
+name = "hwhkit-integration-redis"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HwhKit Redis/Dragonfly integration"
+
+[dependencies]
+async-trait.workspace = true
+hwhkit-config = { version = "0.2.0-alpha.2", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.2.0-alpha.2", path = "../hwhkit-core" }
+serde.workspace = true
