@@ -2,13 +2,14 @@
 name = "hwhkit"
 version.workspace = true
 edition.workspace = true
+rust-version.workspace = true
 authors.workspace = true
-description = "一个用于快速构建 Web 服务的 Rust 工具库"
+description = "A batteries-included Rust web service toolkit (production-ready: health, metrics, OTel, graceful shutdown, JWT, rate-limit, idempotency, circuit-breaker, scheduler)"
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 readme = "README.md"
-keywords = ["web", "framework", "axum", "middleware", "builder"]
+keywords = ["web", "framework", "axum", "middleware", "production"]
 categories = ["web-programming", "web-programming::http-server"]
 
 [dependencies]
@@ -23,34 +24,53 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 thiserror.workspace = true
 anyhow.workspace = true
-tera = { version = "1.19", optional = true }
-jsonwebtoken = { version = "9.2", optional = true }
-chrono = { version = "0.4", features = ["serde"], optional = true }
-tempfile = { version = "3.8", optional = true }
+async-trait.workspace = true
+futures.workspace = true
+http = "1"
+http-body-util = "0.1"
+uuid.workspace = true
+parking_lot.workspace = true
 
-hwhkit-config = { version = "0.2.0-alpha.2", path = "../hwhkit-config", optional = true }
-hwhkit-core = { version = "0.2.0-alpha.2", path = "../hwhkit-core", optional = true }
-hwhkit-observability = { version = "0.2.0-alpha.2", path = "../hwhkit-observability", optional = true }
-hwhkit-transport = { version = "0.2.0-alpha.2", path = "../hwhkit-transport", optional = true }
-hwhkit-macros = { version = "0.2.0-alpha.2", path = "../hwhkit-macros", optional = true }
-hwhkit-integration-postgres = { version = "0.2.0-alpha.2", path = "../hwhkit-integration-postgres", optional = true }
-hwhkit-integration-redis = { version = "0.2.0-alpha.2", path = "../hwhkit-integration-redis", optional = true }
-hwhkit-integration-mongodb = { version = "0.2.0-alpha.2", path = "../hwhkit-integration-mongodb", optional = true }
-hwhkit-integration-nats = { version = "0.2.0-alpha.2", path = "../hwhkit-integration-nats", optional = true }
-hwhkit-integration-qdrant = { version = "0.2.0-alpha.2", path = "../hwhkit-integration-qdrant", optional = true }
-hwhkit-integration-neo4j = { version = "0.2.0-alpha.2", path = "../hwhkit-integration-neo4j", optional = true }
+# OOTB production-ready capabilities. Pulled in via the default feature set.
+metrics = { workspace = true, optional = true }
+metrics-exporter-prometheus = { workspace = true, optional = true }
+sysinfo = { workspace = true, optional = true }
+
+jsonwebtoken = { version = "9.2", optional = true }
+chrono = { workspace = true, optional = true }
+tempfile = { version = "3.8", optional = true }
+reqwest = { workspace = true, optional = true }
+redis-client = { package = "redis", version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager", "script"], optional = true }
+# Idempotency body fingerprinting + base64 cache encoding. Both are
+# small, widely-vetted, and already pulled in transitively by other deps.
+sha2 = { version = "0.10", optional = true }
+base64 = { version = "0.22", optional = true }
+itoa = "1"
+
+hwhkit-buildinfo = { version = "0.6.0-alpha.1", path = "../hwhkit-buildinfo" }
+hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+hwhkit-observability = { version = "0.6.0-alpha.1", path = "../hwhkit-observability" }
+hwhkit-integration-postgres = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-postgres", optional = true }
+hwhkit-integration-redis = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-redis", optional = true }
+hwhkit-integration-mongodb = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-mongodb", optional = true }
+hwhkit-integration-nats = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-nats", optional = true }
+hwhkit-integration-qdrant = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-qdrant", optional = true }
+hwhkit-integration-neo4j = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-neo4j", optional = true }
+hwhkit-integration-s3 = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-s3", optional = true }
+hwhkit-scheduler = { version = "0.6.0-alpha.1", path = "../hwhkit-scheduler", optional = true }
 
 [features]
-default = []
-templates = ["tera"]
-jwt = ["jsonwebtoken", "chrono"]
-testing = ["tempfile"]
+# OOTB production-grade defaults: every fresh service gets health, metrics,
+# `/version`, the standard middleware bundle, request-id, graceful
+# shutdown, and process-level metrics without writing extra code. Each
+# capability has an opt-out feature flag so resource-constrained binaries
+# can pare them down.
+default = ["health-endpoints", "metrics", "process-metrics", "version-endpoints", "middleware-bundle", "graceful-shutdown", "request-id", "multi-tenant"]
 
-config-v2 = ["dep:hwhkit-config", "dep:hwhkit-core", "dep:hwhkit-observability"]
-transport-grpc = ["dep:hwhkit-transport", "hwhkit-transport/grpc"]
-transport-ws = ["dep:hwhkit-transport", "hwhkit-transport/ws"]
-transport-p2p = ["dep:hwhkit-transport", "hwhkit-transport/p2p"]
-macros = ["dep:hwhkit-macros"]
+# Tier 2 JWT chain (JWKS auto-fetch, multi-algorithm verify, axum extractor).
+jwt = ["jsonwebtoken", "chrono", "dep:reqwest", "hwhkit-core/jwt"]
+testing = ["tempfile"]
 
 postgres = ["dep:hwhkit-integration-postgres"]
 redis = ["dep:hwhkit-integration-redis"]
@@ -58,10 +78,54 @@ mongodb = ["dep:hwhkit-integration-mongodb"]
 nats = ["dep:hwhkit-integration-nats"]
 qdrant = ["dep:hwhkit-integration-qdrant"]
 neo4j = ["dep:hwhkit-integration-neo4j"]
+s3 = ["dep:hwhkit-integration-s3"]
 
-full = ["templates", "jwt", "config-v2", "transport-grpc", "transport-ws", "postgres", "redis", "mongodb", "nats", "qdrant", "neo4j", "macros"]
+# Tier 1 production defaults, each individually opt-out-able:
+health-endpoints = []
+metrics = ["dep:metrics", "dep:metrics-exporter-prometheus"]
+process-metrics = ["metrics", "dep:sysinfo"]
+version-endpoints = []
+middleware-bundle = []
+graceful-shutdown = []
+request-id = []
+otel = ["hwhkit-observability/otel"]
+otel-sqlx = ["otel", "hwhkit-observability/otel-sqlx"]
+otel-redis = ["otel", "hwhkit-observability/otel-redis"]
+otel-reqwest = ["otel", "hwhkit-observability/otel-reqwest"]
+migrations = ["postgres"]
+# Multi-tenant primitives (TenantId / TenantScope / TenantExtractorLayer).
+multi-tenant = ["hwhkit-core/multi-tenant"]
+
+# Tier 2 production capabilities (all opt-in):
+rate-limit = ["redis", "dep:redis-client"]
+idempotency = ["redis", "dep:redis-client", "dep:sha2", "dep:base64"]
+circuit-breaker = ["dep:reqwest"]
+scheduler = ["dep:hwhkit-scheduler"]
+
+full = ["jwt", "postgres", "redis", "mongodb", "nats", "qdrant", "neo4j", "s3", "health-endpoints", "metrics", "process-metrics", "version-endpoints", "middleware-bundle", "graceful-shutdown", "request-id", "multi-tenant", "otel", "otel-sqlx", "otel-redis", "otel-reqwest", "migrations", "rate-limit", "idempotency", "circuit-breaker", "scheduler"]
 
 [dev-dependencies]
 tempfile = "3.8"
 tokio-test = "0.4"
-chrono = { version = "0.4", features = ["serde"] }
+chrono = { workspace = true }
+serial_test = "3"
+tower = { workspace = true, features = ["util"] }
+proptest = "1"
+sha2 = "0.10"
+criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+
+[[bench]]
+name = "middleware_stack"
+harness = false
+required-features = ["middleware-bundle", "request-id"]
+
+[[bench]]
+name = "metrics_middleware"
+harness = false
+required-features = ["metrics"]
+
+# macOS proc_pidinfo / proc_fdinfo bindings used by the `process-metrics`
+# sampler to count open file descriptors. Always pulled in on darwin
+# (cheap; no other code in the crate uses it on other platforms).
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = "0.2"

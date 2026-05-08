@@ -1,0 +1,42 @@
+[package]
+name = "hwhkit-scheduler"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HwhKit persistent background scheduler (cron + one-shot, PG/Redis-backed leadership)"
+readme = "README.md"
+
+[dependencies]
+async-trait.workspace = true
+chrono.workspace = true
+futures.workspace = true
+hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+# Optional storage backends
+sqlx = { workspace = true, optional = true }
+redis = { version = "0.27", default-features = false, features = ["tokio-comp", "connection-manager"], optional = true }
+
+[features]
+default = ["postgres-store"]
+postgres-store = ["dep:sqlx"]
+redis-leader = ["dep:redis"]
+
+[dev-dependencies]
+tokio.workspace = true
+proptest = "1"
+criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+
+[[bench]]
+name = "cron_eval"
+harness = false

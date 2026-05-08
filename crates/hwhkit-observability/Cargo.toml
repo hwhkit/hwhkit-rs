@@ -6,8 +6,37 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "HwhKit 日志、链路追踪与指标模块"
+description = "HwhKit 日志、链路追踪与指标模块 (auto JSON/pretty, OpenTelemetry OTLP, client-side instrumentation for sqlx/redis/reqwest)"
 
 [dependencies]
+async-trait = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+http = { workspace = true, optional = true }
 tracing.workspace = true
 tracing-subscriber.workspace = true
+serde.workspace = true
+
+opentelemetry = { version = "0.24", optional = true }
+opentelemetry_sdk = { version = "0.24", features = ["rt-tokio"], optional = true }
+opentelemetry-otlp = { version = "0.17", features = ["grpc-tonic"], optional = true }
+tracing-opentelemetry = { version = "0.25", optional = true }
+
+# Optional client-side instrumentation
+sqlx = { workspace = true, optional = true }
+redis = { version = "0.27", default-features = false, features = ["tokio-comp"], optional = true }
+reqwest = { workspace = true, optional = true }
+tower = { workspace = true, optional = true }
+
+[features]
+default = []
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:opentelemetry-otlp",
+    "dep:tracing-opentelemetry",
+]
+# Client-side auto-instrumentation. Each pulls in its driver dep so users
+# only enable what their stack actually needs.
+otel-sqlx = ["dep:sqlx", "dep:async-trait"]
+otel-redis = ["dep:redis", "dep:async-trait", "dep:futures"]
+otel-reqwest = ["dep:reqwest", "dep:tower", "dep:http", "dep:futures"]

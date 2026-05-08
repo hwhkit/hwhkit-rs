@@ -6,14 +6,44 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "HwhKit 启动管线与核心运行时抽象"
+description = "HwhKit 启动管线与核心运行时抽象 (bootstrap, AppContext, IntegrationProvider, ApiError, health, shutdown, jwt)"
 
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
-hwhkit-config = { version = "0.2.0-alpha.2", path = "../hwhkit-config" }
+futures.workspace = true
+hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
+parking_lot.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+
+# Optional jwt verifier toolkit (JWKS cache + axum Claims<T> extractor).
+jsonwebtoken = { version = "9.2", optional = true }
+reqwest = { workspace = true, optional = true }
+chrono = { workspace = true, optional = true }
+base64 = { version = "0.22", optional = true }
+# Wraps the HMAC secret kept in memory so it's wiped from RAM on drop
+# (defence in depth against post-mortem core dumps + heap inspection).
+zeroize = { version = "1", optional = true }
+
+[features]
+default = ["multi-tenant"]
+jwt = ["dep:jsonwebtoken", "dep:reqwest", "dep:chrono", "dep:base64", "dep:zeroize"]
+# Per-tenant scoping primitive (TenantId / TenantScope) used by routes
+# and integrations that need request-level multi-tenancy.
+multi-tenant = []
 
 [dev-dependencies]
 tokio.workspace = true
+tempfile = "3.8"
+proptest = "1"
+criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+
+[[bench]]
+name = "app_context"
+harness = false

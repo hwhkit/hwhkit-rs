@@ -1,0 +1,18 @@
+[package]
+name = "hwhkit-integration-s3"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HwhKit S3-compatible storage integration (AWS S3 / MinIO)"
+
+[dependencies]
+async-trait.workspace = true
+hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+serde.workspace = true
+aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-credential-types = "1.2"
+aws-sdk-s3 = "1.51"

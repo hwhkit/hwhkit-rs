@@ -10,6 +10,8 @@ description = "HwhKit NATS integration"
 
 [dependencies]
 async-trait.workspace = true
-hwhkit-config = { version = "0.2.0-alpha.2", path = "../hwhkit-config" }
-hwhkit-core = { version = "0.2.0-alpha.2", path = "../hwhkit-core" }
+hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
 serde.workspace = true
+tracing.workspace = true
+async-nats = "0.35"

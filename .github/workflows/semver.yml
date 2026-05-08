@@ -1,0 +1,31 @@
+name: semver-checks
+
+# Runs `cargo-semver-checks` against the most recent published tag to
+# catch accidental breaking-change releases on `main`. The job is
+# advisory until 1.0 — failure does not block CI today, but the
+# expectation is that intentional breaking changes are accompanied by a
+# `MAJOR.MINOR` bump in `Cargo.toml` and a `CHANGELOG.md` entry.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  semver:
+    name: cargo-semver-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: obi1kenobi/cargo-semver-checks-action@v2
+        with:
+          # Ignore failures pre-1.0 — we still surface them in the log.
+          # The main signal we want is the *diff* between releases.
+          command-arguments: >-
+            --workspace

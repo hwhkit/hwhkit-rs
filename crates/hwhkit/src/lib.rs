@@ -1,86 +1,96 @@
 //! # HwhKit
 //!
-//! 一个用于快速构建 Web 服务的 Rust 工具库，支持前后端分离和不分离两种架构。
+//! A batteries-included toolkit for building production Rust web
+//! services. Built on top of [`axum`], [`tokio`], and
+//! [`tower-http`].
 //!
-//! ## 特性
+//! ## Features
 //!
-//! - 🚀 一键构建 Web 服务
-//! - 🔧 灵活的中间件系统
-//! - 📝 支持模板渲染（前后端不分离）
-//! - 🌐 支持 API 服务（前后端分离）
-//! - ⚙️ 基于配置的中间件装载
+//! - One-call server bootstrap ([`run_and_serve`])
+//! - Pluggable middleware bundle (CORS, compression, panic-catcher, …)
+//! - First-class production defaults: `/health`, `/health/ready`,
+//!   `/metrics`, `/version`, `/info`, request-id, graceful shutdown
+//! - Optional capabilities: rate-limit, idempotency, circuit-breaker,
+//!   JWT verifier, scheduler
+//! - Per-tenant scoping primitives ([`hwhkit_core::TenantId`])
 //!
-//! ## 快速开始
+//! ## Quick start
 //!
 //! ```no_run
-//! use hwhkit::WebServerBuilder;
+//! use hwhkit::prelude::*;
+//! use axum::{routing::get, Router};
+//! use async_trait::async_trait;
+//!
+//! struct MyApp;
+//!
+//! #[async_trait]
+//! impl Application for MyApp {
+//!     async fn build_router(
+//!         &self,
+//!         _ctx: AppContext,
+//!         _cfg: &hwhkit_config::AppConfig,
+//!     ) -> Result<Router> {
+//!         Ok(Router::new().route("/", get(|| async { "ok" })))
+//!     }
+//! }
 //!
 //! #[tokio::main]
-//! async fn main() {
-//!     let app = WebServerBuilder::new()
-//!         .config_from_file("config.toml")
-//!         .build()
-//!         .await
-//!         .expect("Failed to build server");
-//!
-//!     app.serve().await;
+//! async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+//!     run_and_serve(MyApp, BootstrapConfig::default()).await
 //! }
 //! ```
+//!
+//! ## Re-exports
+//!
+//! Per-crate exports under `hwhkit::*` are kept narrow and explicit. To
+//! pull in `axum::Router` or `serde::Serialize`, depend on those crates
+//! directly — `hwhkit` does not re-export them.
 
-#[cfg(feature = "config-v2")]
-pub mod bootstrap_v2;
-pub mod builder;
-pub mod config;
-pub mod error;
-pub mod middleware;
-pub mod server;
+pub mod bootstrap;
+pub mod prelude;
+pub mod production;
 
-#[cfg(feature = "templates")]
-pub mod templates;
-
-#[cfg(feature = "config-v2")]
-pub use bootstrap_v2::run as run_v2;
-pub use builder::WebServerBuilder;
-pub use config::Config;
-pub use error::{Error, Result};
-pub use server::WebServer;
-
-// 重新导出常用的类型
-pub use axum::{
-    extract::{Json, Path, Query, State},
-    http::{Method, StatusCode},
-    response::{Html, IntoResponse},
-    routing::{delete, get, patch, post, put, Router},
+// Convenience re-exports of the most-used `hwhkit_core` items so
+// downstream code can `use hwhkit::*` for the headline types without
+// reaching into the workspace crates. The full surface still lives at
+// `hwhkit::core` for advanced use.
+pub use bootstrap::{run, run_and_serve};
+pub use hwhkit_core::error::{Error, IntegrationFailureKind};
+pub use hwhkit_core::{
+    ApiError, ApiResult, AppContext, Application, BuiltApplication, FieldError, HealthCheck,
+    HealthRegistry, IntegrationProvider, ProblemDetails, Result, RuntimeFeatures, ShutdownToken,
 };
 
-pub use serde::{Deserialize, Serialize};
-pub use tokio;
-pub use tower_http::cors::CorsLayer;
+#[cfg(feature = "multi-tenant")]
+pub use hwhkit_core::{TenantId, TenantScope};
 
-// v2 模块的分阶段导出，保证现有 API 兼容。
-#[cfg(feature = "config-v2")]
-pub use hwhkit_config as config_v2;
-#[cfg(feature = "config-v2")]
-pub use hwhkit_core as core_v2;
+// Workspace-crate aliases. These are the `0.6` canonical names. The
+// historical `*_v2` aliases were dropped in 0.6 — depend on the
+// workspace crates by their package names instead.
+pub use hwhkit_config as config;
+pub use hwhkit_core as core;
+pub use hwhkit_observability as observability;
+
 #[cfg(feature = "mongodb")]
-pub use hwhkit_integration_mongodb as mongodb_v2;
+pub use hwhkit_integration_mongodb as mongodb;
 #[cfg(feature = "nats")]
-pub use hwhkit_integration_nats as nats_v2;
+pub use hwhkit_integration_nats as nats;
 #[cfg(feature = "neo4j")]
-pub use hwhkit_integration_neo4j as neo4j_v2;
+pub use hwhkit_integration_neo4j as neo4j;
 #[cfg(feature = "postgres")]
-pub use hwhkit_integration_postgres as postgres_v2;
+pub use hwhkit_integration_postgres as postgres;
 #[cfg(feature = "qdrant")]
-pub use hwhkit_integration_qdrant as qdrant_v2;
+pub use hwhkit_integration_qdrant as qdrant;
 #[cfg(feature = "redis")]
-pub use hwhkit_integration_redis as redis_v2;
-#[cfg(feature = "macros")]
-pub use hwhkit_macros::{handler, main};
-#[cfg(feature = "config-v2")]
-pub use hwhkit_observability as observability_v2;
-#[cfg(any(
-    feature = "transport-grpc",
-    feature = "transport-ws",
-    feature = "transport-p2p"
-))]
-pub use hwhkit_transport as transport_v2;
+pub use hwhkit_integration_redis as redis;
+#[cfg(feature = "s3")]
+pub use hwhkit_integration_s3 as s3;
+#[cfg(feature = "scheduler")]
+pub use hwhkit_scheduler as scheduler;
+
+/// JWT verifier facade. Re-exports the modern verifier from
+/// [`hwhkit_core::jwt`].
+#[cfg(feature = "jwt")]
+pub mod jwt {
+    pub use hwhkit_core::jwt::{Claims, CtxClaims, JwtError, JwtVerifier, JwtVerifierConfig};
+}

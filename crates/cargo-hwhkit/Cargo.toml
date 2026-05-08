@@ -6,7 +6,7 @@ authors.workspace = true
 license.workspace = true
 repository.workspace = true
 homepage.workspace = true
-description = "cargo hwhkit init 命令"
+description = "cargo hwhkit init / migrate / dev 命令"
 
 [[bin]]
 name = "cargo-hwhkit"
@@ -15,3 +15,11 @@ path = "src/main.rs"
 [dependencies]
 anyhow.workspace = true
 clap = { version = "4.5", features = ["derive"] }
+serde.workspace = true
+toml.workspace = true
+# Used to forward SIGINT to the spawned `docker compose up` child so
+# Ctrl+C cleanly tears the container stack down. (N12.)
+tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "signal"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"

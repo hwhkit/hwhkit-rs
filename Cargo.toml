@@ -1,24 +1,26 @@
 [workspace]
 members = [
     "crates/hwhkit",
+    "crates/hwhkit-buildinfo",
     "crates/hwhkit-config",
     "crates/hwhkit-core",
     "crates/hwhkit-observability",
-    "crates/hwhkit-transport",
-    "crates/hwhkit-macros",
     "crates/hwhkit-integration-postgres",
     "crates/hwhkit-integration-redis",
     "crates/hwhkit-integration-mongodb",
     "crates/hwhkit-integration-nats",
     "crates/hwhkit-integration-qdrant",
     "crates/hwhkit-integration-neo4j",
+    "crates/hwhkit-integration-s3",
+    "crates/hwhkit-scheduler",
     "crates/cargo-hwhkit",
 ]
 resolver = "2"
 
 [workspace.package]
-version = "0.2.0-alpha.2"
+version = "0.6.0-alpha.1"
 edition = "2021"
+rust-version = "1.76"
 authors = ["louishwh"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/louishwh/hwhkit-rs"
@@ -28,12 +30,23 @@ homepage = "https://louishwh.tech"
 anyhow = "1.0"
 async-trait = "0.1"
 axum = "0.7"
+chrono = { version = "0.4", features = ["serde"] }
+futures = "0.3"
+http = "1"
+metrics = "0.23"
+metrics-exporter-prometheus = { version = "0.15", default-features = false }
+parking_lot = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "macros", "migrate", "chrono", "uuid", "json"] }
+sysinfo = { version = "0.32", default-features = false, features = ["system"] }
 thiserror = "1.0"
 tokio = { version = "1.0", features = ["full"] }
+tokio-util = { version = "0.7", features = ["rt"] }
 toml = "0.8"
 tower = { version = "0.4", features = ["util"] }
-tower-http = { version = "0.5", features = ["fs", "cors", "trace"] }
+tower-http = { version = "0.5", features = ["catch-panic", "compression-br", "compression-gzip", "cors", "fs", "limit", "sensitive-headers", "timeout", "trace"] }
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
+uuid = { version = "1", features = ["v4", "v7", "serde"] }

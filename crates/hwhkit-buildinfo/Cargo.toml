@@ -1,0 +1,15 @@
+[package]
+name = "hwhkit-buildinfo"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "Compile-time build information (git sha, build time, rustc version) for hwhkit services"
+
+[dependencies]
+serde.workspace = true
+serde_json.workspace = true
+
+[build-dependencies]

@@ -2,20 +2,64 @@
 
 HwhKit 是一个面向 Rust Web 服务的工程化脚手架库，目标是把不变的基础设施沉淀到框架层，让业务项目只保留最小可变部分。
 
-当前仓库已升级为 workspace 架构（`0.2.0-alpha.1`），提供：
+> **0.6.0-alpha.1 — pre-1.0 API stabilization release.** The legacy v1
+> surface (`WebServerBuilder`, `JwtAuth`, `hwhkit-macros`,
+> `hwhkit-transport`) has been removed. See
+> [`MIGRATION.md`](../../MIGRATION.md). Use `hwhkit::run_and_serve` and
+> `impl Application for MyApp`. Common imports are at
+> `hwhkit::prelude::*`.
 
-1. 兼容层：原有 `WebServerBuilder`（v1 风格）继续可用。
-2. 新架构：`config-v2 + core-v2 + run_v2` 启动管线。
-3. CLI：`cargo hwhkit init` 生成标准项目模板。
+当前仓库已升级为 workspace 架构（`0.6.0-alpha.1`），提供：
+
+1. 单一入口：`hwhkit::run_and_serve` + `Application` trait。
+2. **OOTB Production Defaults** (Tier 1) — 见下方"Production Readiness (Tier 1)"。
+3. **Tier 2 production capabilities** — JWT 链路、限流、幂等键、调度器、熔断器（按需 feature 启用）。
+4. CLI：`cargo hwhkit init` / `cargo hwhkit migrate` / `cargo hwhkit dev`。
+
+## Production Readiness (Tier 1)
+
+`run_and_serve(app, bootstrap).await?` 一行调用即获：
+
+| 能力 | 表现 | feature flag (默认开) |
+|---|---|---|
+| `/health`、`/health/ready` | liveness 永远 200；readiness 并发跑每个 IntegrationProvider 注册的 `HealthCheck`，required 失败→503，optional 失败→200 + `degraded` | `health-endpoints` |
+| `/metrics` | Prometheus exporter + tower middleware（`http_requests_total` / `http_request_duration_seconds`）+ `hwhkit_build_info` 标签 | `metrics` |
+| `/version` & `/info` | 编译期注入：`git_sha`、`build_time_unix`、`rust_version`、`cargo_version`、已加载集成 | `version-endpoints` |
+| Graceful shutdown | SIGTERM/SIGINT → `ShutdownToken`（在 `AppContext` 中）→ `axum::serve.with_graceful_shutdown` + `runtime.shutdown.max_drain_secs` | `graceful-shutdown` |
+| Request-ID | tower middleware：读取 `x-request-id` 或生成 UUIDv7，写入 tracing span 并回写响应头 | `request-id` |
+| 标准中间件束 | tracing/spans、CORS、gzip+br、timeout、body limit、catch-panic→`application/problem+json`、auth header redact | `middleware-bundle` |
+| RFC 7807 错误响应 | `hwhkit::ApiError`（NotFound/Unauthorized/Validation/...）`IntoResponse` 输出 `application/problem+json` | 始终可用 |
+| OpenTelemetry OTLP | `hwhkit::observability::otel_layer::init_with_otel(...)`，gRPC 导出，自动注入 service.name/version/environment | `otel`（按需开启） |
+| sqlx migrations | `[integrations.sql.postgres.migrations]` (`run_on_start`, `path`) + `cargo hwhkit migrate {create,list,run,revert}` | `migrations` |
+| 进程指标 | `process_resident_memory_bytes` / `process_virtual_memory_bytes` / `process_cpu_seconds_total` / `process_open_fds` (Linux/macOS) / `process_threads`，每 5s 采样写入 `/metrics` | `process-metrics`（默认开） |
+
+## Production Readiness (Tier 2, opt-in)
+
+| 能力 | 表现 | feature flag |
+|---|---|---|
+| JWT 校验链 | `hwhkit::jwt::JwtVerifier` (JWKS 自动拉取 + 缓存、RS256/ES256/HS256/EdDSA 等)、`Claims<T>` axum 抽取器 | `jwt` |
+| 限流 (Redis token-bucket) | `RateLimitLayer::per_ip / per_route / per_user`，Lua 原子扣减，命中后 429 + `Retry-After` + RFC 7807 body | `rate-limit` |
+| 幂等键 (`Idempotency-Key`) | POST/PUT/PATCH/DELETE 自动重放命中的缓存响应，TTL 默认 24h | `idempotency` |
+| 调度器 | 独立 crate `hwhkit-scheduler`：cron + 一次性任务，PG 持久化 (`SELECT FOR UPDATE SKIP LOCKED` 保证多节点互斥) | `scheduler` |
+| 熔断器 | `CircuitBreaker` + `CircuitBreakerClient`，closed→open→half-open 三态，可配置失败率/最低请求数/窗口/冷却 | `circuit-breaker` |
+| OTel 客户端探针 | sqlx `SqlxSpan::query`、redis `redis_span`、reqwest `tracing_send` — span/属性遵循 OTel 语义约定 | `otel-sqlx` / `otel-redis` / `otel-reqwest` |
+
+## CLI: `cargo hwhkit dev`
+
+读取 `hwhkit.toml`（缺省自动启用 Postgres + Redis）后生成 `target/.hwhkit-dev/docker-compose.yml`，再 shell out 给 `docker compose`：
+
+- `cargo hwhkit dev up [--detach]` — 启动依赖容器
+- `cargo hwhkit dev down` — 停止并移除
+- `cargo hwhkit dev status` — 查看容器状态
+- `cargo hwhkit dev generate --out docker-compose.dev.yml` — 仅生成不启动
 
 ## 当前能力（按代码现状）
 
-1. workspace 分层拆包：`hwhkit-config`、`hwhkit-core`、`hwhkit-observability`、`hwhkit-transport`、`hwhkit-macros`、`hwhkit-integration-*`、`cargo-hwhkit`。
+1. workspace 分层拆包：`hwhkit-config`、`hwhkit-core`、`hwhkit-observability`、`hwhkit-buildinfo`、`hwhkit-scheduler`、`hwhkit-integration-*`、`cargo-hwhkit`。
 2. 配置分层加载：`config/default.toml -> config/{env}.toml -> ENV(HWHKIT__) -> remote patch`。
 3. 严格校验：配置合法性 + feature/config 一致性校验。
-4. 首批集成 provider：`postgres/redis/mongodb/nats/qdrant/neo4j`（当前为初始化骨架与参数校验、Handle 注入）。
-5. 传输层抽象：`RPC/EventBus/WebSocket/P2P` 配置模型与接口；`MemoryEventBus` 可用。
-6. 模板初始化：`minimal-api`、`api-grpc`、`realtime-event`。
+4. 集成 provider：`postgres/redis/mongodb/nats/qdrant/neo4j/s3` —— Handle 内承载真实连接池，并自动暴露 readiness 健康检查。
+5. 模板初始化：`minimal-api`、`api-grpc`、`realtime-event`。
 
 ## 仓库结构
 
@@ -26,44 +70,52 @@ hwhkit-rs/
     hwhkit-config/                  # 配置加载/合并/校验
     hwhkit-core/                    # bootstrap/Application/IntegrationProvider
     hwhkit-observability/           # logging/tracing 初始化
-    hwhkit-transport/               # gRPC/RPC/WS/P2P 抽象层
-    hwhkit-macros/                  # proc-macro 预留
+    hwhkit-buildinfo/               # 编译期 git/rustc 信息
+    hwhkit-scheduler/               # 调度器（cron + 一次性任务）
     hwhkit-integration-postgres/
     hwhkit-integration-redis/
     hwhkit-integration-mongodb/
     hwhkit-integration-nats/
     hwhkit-integration-qdrant/
     hwhkit-integration-neo4j/
+    hwhkit-integration-s3/
     cargo-hwhkit/                   # cargo hwhkit init
-  src/                              # facade 兼容入口（v1 + v2 re-export）
   templates/                        # 模板目录
-  examples/
   doc/
 ```
 
 ## Feature 概览（`crates/hwhkit/Cargo.toml`）
 
-基础：
+默认开启（OOTB production defaults，按需 `default-features = false` 关闭）：
 
-- `templates`
+- `health-endpoints`
+- `metrics`
+- `process-metrics`
+- `version-endpoints`
+- `middleware-bundle`
+- `graceful-shutdown`
+- `request-id`
+
+按需启用：
+
 - `jwt`
-- `config-v2`
-- `macros`
+- 集成：`postgres`、`redis`、`mongodb`、`nats`、`qdrant`、`neo4j`、`s3`
+- 观测：`otel`（启用 OTLP gRPC 导出）；`otel-sqlx` / `otel-redis` / `otel-reqwest`（客户端探针）
+- 数据库：`migrations`（`postgres` 子能力）
+- Tier 2：`rate-limit`（需要 `redis`）、`idempotency`（需要 `redis`）、`circuit-breaker`、`scheduler`
 
-传输：
+### Minimal preset
 
-- `transport-grpc`
-- `transport-ws`
-- `transport-p2p`
+The default feature set is lean — health, metrics, request-id,
+graceful shutdown, version, middleware bundle, multi-tenant primitives.
+For the smallest possible binary set
+`default-features = false` and pull in only what you need:
 
-集成：
-
-- `postgres`
-- `redis`
-- `mongodb`
-- `nats`
-- `qdrant`
-- `neo4j`
+```toml
+hwhkit = { version = "0.6.0-alpha.1", default-features = false, features = [
+  "graceful-shutdown",
+] }
+```
 
 聚合：
 
@@ -77,16 +129,17 @@ hwhkit-rs/
 [dependencies]
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
-hwhkit = { version = "0.2.0-alpha.2", features = [
-  "config-v2",
-  "transport-grpc",
-  "transport-ws",
+# Default features already provide health/metrics/version/middleware/shutdown/request-id.
+hwhkit = { version = "0.6.0-alpha.1", features = [
   "postgres",
   "redis",
   "mongodb",
   "nats",
   "qdrant",
-  "neo4j"
+  "neo4j",
+  "s3",
+  # Tier 2 (opt-in):
+  # "jwt", "rate-limit", "idempotency", "circuit-breaker", "scheduler",
 ] }
 ```
 
@@ -105,41 +158,35 @@ cargo install --path crates/cargo-hwhkit
 cargo hwhkit init my-service --template api-grpc
 ```
 
-## 快速开始（v2）
+## 快速开始 (OOTB)
 
 ```rust
 use async_trait::async_trait;
-use hwhkit::{
-    config_v2::{AppConfig, BootstrapConfig},
-    core_v2::{AppContext, Application, Result},
-    get, run_v2, Router,
-};
+use axum::{routing::get, Router};
+use hwhkit::prelude::*;
+use hwhkit::config::AppConfig;
 
 struct App;
 
 #[async_trait]
 impl Application for App {
     async fn build_router(&self, _ctx: AppContext, _cfg: &AppConfig) -> Result<Router> {
-        Ok(Router::new().route("/healthz", get(health)))
+        Ok(Router::new().route("/hello", get(|| async { "hi" })))
     }
 }
 
-async fn health() -> &'static str {
-    "ok"
-}
-
 #[tokio::main]
-async fn main() {
-    let bootstrap = BootstrapConfig::default();
-    let built = run_v2(App, bootstrap).await.expect("bootstrap failed");
-
-    println!("applied_sources = {:?}", built.applied_sources);
-    println!("initialized_integrations = {:?}", built.initialized_integrations);
-    println!("degraded_integrations = {:?}", built.degraded_integrations);
-
-    // built.router 可继续接入你自己的 server runtime
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Mounts /health, /health/ready, /metrics, /version, /info,
+    // applies CORS/timeout/body-limit/compression/catch-panic,
+    // adds request-id, listens for SIGTERM/SIGINT for graceful shutdown.
+    run_and_serve(App, BootstrapConfig::default()).await
 }
 ```
+
+If you want to manage the listener yourself, use `hwhkit::run` to get a
+[`BuiltApplication`] and drive `built.router()` / `built.shutdown()`
+yourself.
 
 ## 配置示例（v2）
 
@@ -193,47 +240,14 @@ url = "bolt://127.0.0.1:7687"
 username = "neo4j"
 password = "password"
 
-[transport.grpc]
-enabled = false
-listen = "0.0.0.0:50051"
-
-[transport.rpc]
-enabled = false
-default = "grpc"
-timeout_ms = 3000
-
-[transport.websocket]
-enabled = false
-path = "/ws"
-max_connections = 10000
-heartbeat_seconds = 20
-```
-
-## 兼容模式（v1）
-
-原有 `WebServerBuilder` 仍可使用：
-
-```rust
-use hwhkit::WebServerBuilder;
-
-#[tokio::main]
-async fn main() {
-    let server = WebServerBuilder::new()
-        .config_from_file("config.toml")
-        .build()
-        .await
-        .expect("failed to build");
-
-    server.serve().await.expect("failed to serve");
-}
 ```
 
 ## 质量状态
 
-已通过的关键测试：
-
 ```bash
-cargo test -p hwhkit-config -p hwhkit-core -p hwhkit-transport -p cargo-hwhkit -p hwhkit
+cargo build  --workspace --all-features
+cargo test   --workspace --all-features
+cargo clippy --workspace --all-features --all-targets -- -D warnings
 ```
 
 ## 文档
@@ -248,9 +262,8 @@ cargo test -p hwhkit-config -p hwhkit-core -p hwhkit-transport -p cargo-hwhkit -
 
 ## 当前边界说明
 
-1. `hwhkit-integration-*` 当前是 provider 骨架与参数校验层，真实驱动深度接入在后续阶段推进。
-2. `hwhkit-transport` 当前提供稳定抽象与可测试基础实现，`tonic/async-nats/axum ws` 的完整运行时实现仍在计划中。
-3. `transport-p2p` 保持 experimental。
+1. `hwhkit-integration-*` provider 骨架已就位，真实连接池 + readiness 已接入；驱动深度接入会随版本推进。
+2. 0.6 周期发布前，`hwhkit-transport` 与 `hwhkit-macros` 这两个旧 crate 已删除（参见 `MIGRATION.md`）。
 
 ## License
 

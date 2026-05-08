@@ -1,3 +1,10 @@
+// Config types intentionally use manual `Default` impls so that the
+// "off by default" semantics for boolean toggles (`enabled = false`,
+// `required = false`) are visible at the type level rather than hidden
+// behind a derive. Suppress the lint workspace-wide for this crate.
+#![allow(clippy::derivable_impls)]
+
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 use std::{
@@ -7,20 +14,75 @@ use std::{
     sync::Arc,
 };
 
+/// Boxed third-party error. Mirrors `hwhkit_core::error::BoxError` but
+/// is duplicated here so this crate stays free of a hard dep on the core
+/// crate (downstream tooling can use `hwhkit-config` standalone).
+pub type BoxError = Box<dyn std::error::Error + Send + Sync + 'static>;
+
 #[derive(Debug, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
-    #[error("config parse failed: {0}")]
-    Parse(String),
-    #[error("config io failed: {0}")]
-    Io(String),
+    #[error("config parse failed: {message}")]
+    Parse {
+        message: String,
+        #[source]
+        source: Option<BoxError>,
+    },
+    #[error("config io failed: {message}")]
+    Io {
+        message: String,
+        #[source]
+        source: Option<BoxError>,
+    },
     #[error("config validation failed: {0}")]
     Validation(String),
+}
+
+impl Error {
+    pub fn parse(message: impl Into<String>) -> Self {
+        Self::Parse {
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    pub fn parse_with_source(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Parse {
+            message: message.into(),
+            source: Some(Box::new(source)),
+        }
+    }
+
+    pub fn io(message: impl Into<String>) -> Self {
+        Self::Io {
+            message: message.into(),
+            source: None,
+        }
+    }
+
+    pub fn io_with_source(
+        message: impl Into<String>,
+        source: impl std::error::Error + Send + Sync + 'static,
+    ) -> Self {
+        Self::Io {
+            message: message.into(),
+            source: Some(Box::new(source)),
+        }
+    }
+
+    pub fn validation(message: impl Into<String>) -> Self {
+        Self::Validation(message.into())
+    }
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[non_exhaustive]
 pub enum Environment {
     Dev,
     Test,
@@ -46,6 +108,7 @@ impl Environment {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct BootstrapConfig {
     pub service_name: String,
     pub environment: Environment,
@@ -65,21 +128,25 @@ impl Default for BootstrapConfig {
 }
 
 impl BootstrapConfig {
+    #[must_use]
     pub fn with_service_name(mut self, service_name: impl Into<String>) -> Self {
         self.service_name = service_name.into();
         self
     }
 
+    #[must_use]
     pub fn with_environment(mut self, environment: Environment) -> Self {
         self.environment = environment;
         self
     }
 
+    #[must_use]
     pub fn with_config_dir(mut self, config_dir: impl AsRef<Path>) -> Self {
         self.config_dir = config_dir.as_ref().to_path_buf();
         self
     }
 
+    #[must_use]
     pub fn with_env_prefix(mut self, env_prefix: impl Into<String>) -> Self {
         self.env_prefix = env_prefix.into();
         self
@@ -95,7 +162,8 @@ impl BootstrapConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct AppConfig {
     #[serde(default)]
     pub server: ServerConfig,
@@ -104,18 +172,7 @@ pub struct AppConfig {
     #[serde(default)]
     pub integrations: IntegrationsConfig,
     #[serde(default)]
-    pub transport: TransportConfig,
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            server: ServerConfig::default(),
-            observability: ObservabilityConfig::default(),
-            integrations: IntegrationsConfig::default(),
-            transport: TransportConfig::default(),
-        }
-    }
+    pub runtime: RuntimeConfig,
 }
 
 impl AppConfig {
@@ -162,12 +219,18 @@ impl AppConfig {
             self.integrations.neo4j.enabled,
             &self.integrations.neo4j.url,
         )?;
-        validate_url_toggle(
-            "transport.grpc",
-            self.transport.grpc.enabled,
-            &self.transport.grpc.listen,
-        )?;
-
+        if self.integrations.storage.s3.enabled {
+            if self.integrations.storage.s3.bucket.trim().is_empty() {
+                return Err(Error::Validation(
+                    "integrations.storage.s3.bucket cannot be empty when enabled".to_string(),
+                ));
+            }
+            if self.integrations.storage.s3.region.trim().is_empty() {
+                return Err(Error::Validation(
+                    "integrations.storage.s3.region cannot be empty when enabled".to_string(),
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -182,6 +245,7 @@ fn validate_url_toggle(path: &str, enabled: bool, url: &str) -> Result<()> {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ServerConfig {
     pub host: String,
     pub port: u16,
@@ -197,6 +261,7 @@ impl Default for ServerConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct ObservabilityConfig {
     pub service_name: String,
     pub environment: Environment,
@@ -218,6 +283,7 @@ impl Default for ObservabilityConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct LoggingConfig {
     pub level: String,
     pub format: String,
@@ -233,9 +299,12 @@ impl Default for LoggingConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct TracingConfig {
     pub enabled: bool,
     pub sample_ratio: f64,
+    #[serde(default)]
+    pub otel: OtelConfig,
 }
 
 impl Default for TracingConfig {
@@ -243,11 +312,166 @@ impl Default for TracingConfig {
         Self {
             enabled: true,
             sample_ratio: 1.0,
+            otel: OtelConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OtelConfig {
+    pub enabled: bool,
+    pub endpoint: String,
+    pub protocol: String, // "grpc" | "http"
+}
+
+impl Default for OtelConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            endpoint: "http://localhost:4317".to_string(),
+            protocol: "grpc".to_string(),
+        }
+    }
+}
+
+/// Production-runtime configuration (health/metrics/version endpoints,
+/// middleware bundle, shutdown).
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[non_exhaustive]
+pub struct RuntimeConfig {
+    #[serde(default)]
+    pub health: HealthConfig,
+    #[serde(default)]
+    pub metrics: MetricsConfig,
+    #[serde(default)]
+    pub info: InfoConfig,
+    #[serde(default)]
+    pub middleware: MiddlewareConfig,
+    #[serde(default)]
+    pub shutdown: ShutdownConfig,
+    #[serde(default)]
+    pub request_id: RequestIdConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct HealthConfig {
+    pub enabled: bool,
+    pub path_live: String,
+    pub path_ready: String,
+}
+
+impl Default for HealthConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path_live: "/health".to_string(),
+            path_ready: "/health/ready".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct MetricsConfig {
+    pub enabled: bool,
+    pub path: String,
+}
+
+impl Default for MetricsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path: "/metrics".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct InfoConfig {
+    pub enabled: bool,
+    pub path_version: String,
+    pub path_info: String,
+}
+
+impl Default for InfoConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            path_version: "/version".to_string(),
+            path_info: "/info".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct MiddlewareConfig {
+    pub enabled: bool,
+    pub cors: CorsConfig,
+    pub compression: bool,
+    pub timeout_secs: u64,
+    pub body_limit_bytes: usize,
+    pub catch_panic: bool,
+}
+
+impl Default for MiddlewareConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            cors: CorsConfig::default(),
+            compression: true,
+            timeout_secs: 30,
+            body_limit_bytes: 2 * 1024 * 1024,
+            catch_panic: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct CorsConfig {
+    pub enabled: bool,
+    pub allow_origins: Vec<String>,
+    pub allow_credentials: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ShutdownConfig {
+    pub enabled: bool,
+    pub max_drain_secs: u64,
+}
+
+impl Default for ShutdownConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_drain_secs: 30,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct RequestIdConfig {
+    pub enabled: bool,
+    pub header: String,
+}
+
+impl Default for RequestIdConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            header: "x-request-id".to_string(),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[non_exhaustive]
 pub struct IntegrationsConfig {
     #[serde(default)]
     pub sql: SqlConfig,
@@ -261,20 +485,61 @@ pub struct IntegrationsConfig {
     pub vector: VectorConfig,
     #[serde(default)]
     pub neo4j: Neo4jConfig,
+    #[serde(default)]
+    pub storage: StorageConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[non_exhaustive]
+pub struct StorageConfig {
+    #[serde(default)]
+    pub s3: S3Config,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct S3Config {
+    pub enabled: bool,
+    pub required: bool,
+    pub endpoint: String,
+    pub region: String,
+    pub bucket: String,
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub force_path_style: bool,
+}
+
+impl Default for S3Config {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            required: false,
+            endpoint: String::new(),
+            region: "us-east-1".to_string(),
+            bucket: String::new(),
+            access_key_id: String::new(),
+            secret_access_key: String::new(),
+            force_path_style: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[non_exhaustive]
 pub struct SqlConfig {
     #[serde(default)]
     pub postgres: PostgresConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct PostgresConfig {
     pub enabled: bool,
     pub required: bool,
     pub url: String,
     pub max_connections: u32,
+    #[serde(default)]
+    pub migrations: PostgresMigrationsConfig,
 }
 
 impl Default for PostgresConfig {
@@ -284,11 +549,29 @@ impl Default for PostgresConfig {
             required: true,
             url: String::new(),
             max_connections: 20,
+            migrations: PostgresMigrationsConfig::default(),
         }
     }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct PostgresMigrationsConfig {
+    pub run_on_start: bool,
+    pub path: String,
+}
+
+impl Default for PostgresMigrationsConfig {
+    fn default() -> Self {
+        Self {
+            run_on_start: false,
+            path: "./migrations".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct RedisConfig {
     pub enabled: bool,
     pub required: bool,
@@ -306,6 +589,7 @@ impl Default for RedisConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct MongoDbConfig {
     pub enabled: bool,
     pub required: bool,
@@ -325,12 +609,14 @@ impl Default for MongoDbConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[non_exhaustive]
 pub struct MessagingConfig {
     #[serde(default)]
     pub nats: NatsConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct NatsConfig {
     pub enabled: bool,
     pub required: bool,
@@ -348,12 +634,14 @@ impl Default for NatsConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[non_exhaustive]
 pub struct VectorConfig {
     #[serde(default)]
     pub qdrant: QdrantConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct QdrantConfig {
     pub enabled: bool,
     pub required: bool,
@@ -373,6 +661,7 @@ impl Default for QdrantConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct Neo4jConfig {
     pub enabled: bool,
     pub required: bool,
@@ -389,101 +678,6 @@ impl Default for Neo4jConfig {
             url: String::new(),
             username: "neo4j".to_string(),
             password: String::new(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TransportConfig {
-    #[serde(default)]
-    pub grpc: GrpcTransportConfig,
-    #[serde(default)]
-    pub rpc: RpcTransportConfig,
-    #[serde(default)]
-    pub nats: NatsTransportConfig,
-    #[serde(default)]
-    pub websocket: WebsocketTransportConfig,
-    #[serde(default)]
-    pub p2p: P2pTransportConfig,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GrpcTransportConfig {
-    pub enabled: bool,
-    pub listen: String,
-}
-
-impl Default for GrpcTransportConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            listen: "0.0.0.0:50051".to_string(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RpcTransportConfig {
-    pub enabled: bool,
-    pub default: String,
-    pub timeout_ms: u64,
-}
-
-impl Default for RpcTransportConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            default: "grpc".to_string(),
-            timeout_ms: 3_000,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NatsTransportConfig {
-    pub enabled: bool,
-    pub url: String,
-    pub jetstream: bool,
-}
-
-impl Default for NatsTransportConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            url: "nats://127.0.0.1:4222".to_string(),
-            jetstream: false,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct WebsocketTransportConfig {
-    pub enabled: bool,
-    pub path: String,
-    pub max_connections: usize,
-}
-
-impl Default for WebsocketTransportConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            path: "/ws".to_string(),
-            max_connections: 10_000,
-        }
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct P2pTransportConfig {
-    pub enabled: bool,
-    pub listen: String,
-}
-
-impl Default for P2pTransportConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            listen: "/ip4/0.0.0.0/tcp/7001".to_string(),
         }
     }
 }
@@ -549,43 +743,54 @@ impl ConfigPatch {
     }
 }
 
+/// Pluggable configuration source. Sources are invoked in registration
+/// order by [`ConfigLoader::load`] and their patches are merged onto the
+/// running config (last write wins per leaf field).
+///
+/// **Project policy:** the trait is intentionally **open**. Future
+/// methods must ship with default implementations so existing impls
+/// keep compiling without churn.
+#[async_trait]
 pub trait ConfigSource: Send + Sync {
     fn name(&self) -> &'static str;
-    fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch>;
+    async fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch>;
 }
 
 pub struct FileDefaultSource;
 
+#[async_trait]
 impl ConfigSource for FileDefaultSource {
     fn name(&self) -> &'static str {
         "file:default"
     }
 
-    fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
+    async fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
         read_toml_patch(bootstrap.default_file(), true)
     }
 }
 
 pub struct FileEnvironmentSource;
 
+#[async_trait]
 impl ConfigSource for FileEnvironmentSource {
     fn name(&self) -> &'static str {
         "file:environment"
     }
 
-    fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
+    async fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
         read_toml_patch(bootstrap.env_file(), false)
     }
 }
 
 pub struct EnvConfigSource;
 
+#[async_trait]
 impl ConfigSource for EnvConfigSource {
     fn name(&self) -> &'static str {
         "env"
     }
 
-    fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
+    async fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
         let mut patch = ConfigPatch::empty();
 
         for (key, raw_value) in env::vars() {
@@ -617,8 +822,17 @@ impl ConfigSource for EnvConfigSource {
     }
 }
 
+/// Async-friendly remote config provider. Implementations typically hit
+/// a network — Consul, Vault, etcd, an internal control-plane HTTP API,
+/// … — and return a partial JSON patch. The patch is filtered through
+/// [`RemotePatchPolicy`] before reaching [`AppConfig`].
+///
+/// **Project policy:** the trait is intentionally **open**. Future
+/// methods must ship with default implementations so existing impls
+/// keep compiling without churn.
+#[async_trait]
 pub trait RemoteConfigProvider: Send + Sync {
-    fn fetch_patch(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch>;
+    async fn fetch_patch(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch>;
 }
 
 #[derive(Clone, Debug)]
@@ -658,13 +872,14 @@ impl RemoteConfigSource {
     }
 }
 
+#[async_trait]
 impl ConfigSource for RemoteConfigSource {
     fn name(&self) -> &'static str {
         "remote"
     }
 
-    fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
-        let patch = self.provider.fetch_patch(bootstrap)?;
+    async fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
+        let patch = self.provider.fetch_patch(bootstrap).await?;
         Ok(filter_patch(patch, &self.policy))
     }
 }
@@ -686,19 +901,31 @@ impl Default for ConfigLoader {
 }
 
 impl ConfigLoader {
-    pub fn with_source(mut self, source: Box<dyn ConfigSource>) -> Self {
+    /// Append a [`ConfigSource`] to the loader. The source is boxed
+    /// internally — callers pass a concrete type (or a `Box`/`Arc` of
+    /// `dyn ConfigSource`) without ceremony.
+    #[must_use]
+    pub fn with_source<S: ConfigSource + 'static>(mut self, source: S) -> Self {
+        self.sources.push(Box::new(source));
+        self
+    }
+
+    /// Append a pre-boxed source. Use this when the source comes from
+    /// elsewhere as a trait object (e.g. plugin loading).
+    #[must_use]
+    pub fn with_boxed_source(mut self, source: Box<dyn ConfigSource>) -> Self {
         self.sources.push(source);
         self
     }
 
-    pub fn load(&self, bootstrap: &BootstrapConfig) -> Result<LoadedConfig> {
+    pub async fn load(&self, bootstrap: &BootstrapConfig) -> Result<LoadedConfig> {
         let mut merged = serde_json::to_value(AppConfig::default())
-            .map_err(|e| Error::Parse(format!("default config serialization failed: {e}")))?;
+            .map_err(|e| Error::parse_with_source("default config serialization failed", e))?;
 
         let mut applied_sources = Vec::new();
 
         for source in &self.sources {
-            let patch = source.load(bootstrap)?;
+            let patch = source.load(bootstrap).await?;
             if patch.is_empty() {
                 continue;
             }
@@ -707,7 +934,7 @@ impl ConfigLoader {
         }
 
         let config: AppConfig = serde_json::from_value(merged)
-            .map_err(|e| Error::Parse(format!("final config deserialization failed: {e}")))?;
+            .map_err(|e| Error::parse_with_source("final config deserialization failed", e))?;
         config.validate_strict()?;
 
         Ok(LoadedConfig {
@@ -726,7 +953,7 @@ pub struct LoadedConfig {
 fn read_toml_patch(path: PathBuf, required: bool) -> Result<ConfigPatch> {
     if !path.exists() {
         if required {
-            return Err(Error::Io(format!(
+            return Err(Error::io(format!(
                 "required config file not found: {}",
                 path.display()
             )));
@@ -735,16 +962,18 @@ fn read_toml_patch(path: PathBuf, required: bool) -> Result<ConfigPatch> {
     }
 
     let content = fs::read_to_string(&path)
-        .map_err(|e| Error::Io(format!("cannot read {}: {e}", path.display())))?;
+        .map_err(|e| Error::io_with_source(format!("cannot read {}", path.display()), e))?;
 
     if content.trim().is_empty() {
         return Ok(ConfigPatch::empty());
     }
 
-    let parsed: toml::Value = toml::from_str(&content)
-        .map_err(|e| Error::Parse(format!("toml parse failed {}: {e}", path.display())))?;
-    let value = serde_json::to_value(parsed)
-        .map_err(|e| Error::Parse(format!("toml conversion failed {}: {e}", path.display())))?;
+    let parsed: toml::Value = toml::from_str(&content).map_err(|e| {
+        Error::parse_with_source(format!("toml parse failed {}", path.display()), e)
+    })?;
+    let value = serde_json::to_value(parsed).map_err(|e| {
+        Error::parse_with_source(format!("toml conversion failed {}", path.display()), e)
+    })?;
 
     Ok(ConfigPatch::from_value(value))
 }
@@ -822,12 +1051,13 @@ fn collect_allowed_leaf_paths(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
+    use tempfile::TempDir;
 
     struct DemoRemote;
 
+    #[async_trait]
     impl RemoteConfigProvider for DemoRemote {
-        fn fetch_patch(&self, _bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
+        async fn fetch_patch(&self, _bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
             let patch = serde_json::json!({
                 "observability": {
                     "logging": {
@@ -842,16 +1072,6 @@ mod tests {
         }
     }
 
-    fn temp_config_dir() -> PathBuf {
-        let millis = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("duration should be valid")
-            .as_millis();
-        let dir = env::temp_dir().join(format!("hwhkit-config-test-{millis}"));
-        fs::create_dir_all(&dir).expect("temp dir should be created");
-        dir
-    }
-
     #[test]
     fn bootstrap_config_defaults_to_layered_files() {
         let cfg = BootstrapConfig::default();
@@ -859,11 +1079,11 @@ mod tests {
         assert_eq!(cfg.env_file(), PathBuf::from("config/dev.toml"));
     }
 
-    #[test]
-    fn layered_loader_merges_default_and_env() {
-        let dir = temp_config_dir();
+    #[tokio::test]
+    async fn layered_loader_merges_default_and_env() {
+        let dir = TempDir::new().expect("tempdir");
         fs::write(
-            dir.join("default.toml"),
+            dir.path().join("default.toml"),
             r#"
 [server]
 host = "127.0.0.1"
@@ -876,7 +1096,7 @@ environment = "dev"
         )
         .expect("write default");
         fs::write(
-            dir.join("test.toml"),
+            dir.path().join("test.toml"),
             r#"
 [server]
 port = 8081
@@ -886,10 +1106,11 @@ port = 8081
 
         let bootstrap = BootstrapConfig::default()
             .with_environment(Environment::Test)
-            .with_config_dir(&dir);
+            .with_config_dir(dir.path());
 
         let loaded = ConfigLoader::default()
             .load(&bootstrap)
+            .await
             .expect("config should load");
         assert_eq!(loaded.config.server.port, 8081);
         assert!(loaded
@@ -902,12 +1123,13 @@ port = 8081
             .any(|source| source == "file:environment"));
     }
 
-    #[test]
-    fn remote_patch_is_filtered_by_policy() {
+    #[tokio::test]
+    async fn remote_patch_is_filtered_by_policy() {
         let policy = RemotePatchPolicy::strict_defaults();
         let source = RemoteConfigSource::new(Arc::new(DemoRemote), policy);
         let patch = source
             .load(&BootstrapConfig::default())
+            .await
             .expect("remote patch should load");
         let value = patch.into_value();
 

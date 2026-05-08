@@ -1,1 +1,23 @@
 /target
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Build / debug
+**/*.rs.bk
+*.profraw
+
+# Local env
+.env
+.env.local
+
+# Fuzz
+fuzz/corpus/
+fuzz/artifacts/

@@ -1,0 +1,56 @@
+[package]
+name = "hwhkit-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2021"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }
+
+# Used by the TOML / JWT / path fuzz targets (small, already in the
+# workspace transitively).
+toml = "0.8"
+serde_json = "1"
+base64 = "0.22"
+axum = "0.7"
+http = "1"
+tokio = { version = "1", features = ["rt"] }
+
+# Workspace targets exercised by fuzzers. Keep these on the path-based
+# dependency form so `cargo fuzz` picks up the local checkout.
+hwhkit-scheduler = { path = "../crates/hwhkit-scheduler" }
+hwhkit-config = { path = "../crates/hwhkit-config" }
+hwhkit-core = { path = "../crates/hwhkit-core", features = ["jwt", "multi-tenant"] }
+hwhkit = { path = "../crates/hwhkit", default-features = false, features = ["multi-tenant"] }
+
+# Excluded from workspace by default — the workspace Cargo.toml uses a
+# virtual manifest and does not list this directory.
+[workspace]
+
+[[bin]]
+name = "cron_parse"
+path = "fuzz_targets/cron_parse.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "config_toml"
+path = "fuzz_targets/config_toml.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "jwt_decode"
+path = "fuzz_targets/jwt_decode.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "path_param_extract"
+path = "fuzz_targets/path_param_extract.rs"
+test = false
+doc = false
