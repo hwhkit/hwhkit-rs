@@ -1,8 +1,7 @@
 //! # HwhKit
 //!
 //! A batteries-included toolkit for building production Rust web
-//! services. Built on top of [`axum`], [`tokio`], and
-//! [`tower-http`].
+//! services. Built on top of [`axum`], [`tokio`], and `tower-http`.
 //!
 //! ## Features
 //!

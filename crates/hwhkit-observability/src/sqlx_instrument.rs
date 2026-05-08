@@ -25,15 +25,27 @@
 
 use tracing::{field::Empty, Span};
 
+/// SQL dialect tag used as the `db.system` attribute on instrumented
+/// query spans (matching the OpenTelemetry semantic conventions).
+///
+/// Marked `#[non_exhaustive]` so adding new dialects in a minor release
+/// (e.g. `Mssql`) is non-breaking.
 #[derive(Debug, Clone, Copy)]
+#[non_exhaustive]
 pub enum DbSystem {
+    /// PostgreSQL — emitted as `db.system = "postgresql"`.
     Postgres,
+    /// MySQL / MariaDB — emitted as `db.system = "mysql"`.
     Mysql,
+    /// SQLite — emitted as `db.system = "sqlite"`.
     Sqlite,
+    /// Catch-all for any other SQL dialect — emitted as
+    /// `db.system = "other_sql"`.
     Other,
 }
 
 impl DbSystem {
+    /// Stable string representation used for the `db.system` span field.
     pub fn as_str(&self) -> &'static str {
         match self {
             DbSystem::Postgres => "postgresql",
@@ -44,6 +56,7 @@ impl DbSystem {
     }
 }
 
+/// Span constructor for sqlx queries — see [`SqlxSpan::query`].
 pub struct SqlxSpan;
 
 impl SqlxSpan {

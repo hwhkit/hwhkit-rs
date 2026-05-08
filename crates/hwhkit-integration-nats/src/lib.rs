@@ -1,3 +1,11 @@
+//! HwhKit NATS / JetStream integration.
+//!
+//! Wires a connected `async_nats::Client` and a derived JetStream
+//! context into the bootstrap `AppContext` and exposes a readiness
+//! probe based on the underlying connection state.
+
+#![warn(missing_docs)]
+
 use std::sync::Arc;
 
 use async_nats::jetstream::{self, Context as JetStreamContext};
@@ -10,10 +18,14 @@ use hwhkit_core::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Standalone NATS section schema, mirrored from
+/// `hwhkit_config::NatsIntegrationConfig`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct NatsConfig {
+    /// Whether the integration should be initialised at bootstrap.
     pub enabled: bool,
+    /// `nats://` or `tls://` connection URL.
     pub url: String,
 }
 
@@ -38,19 +50,27 @@ impl std::fmt::Debug for NatsHandle {
 }
 
 impl NatsHandle {
+    /// Borrow the underlying `async_nats::Client`.
     pub fn client(&self) -> &Client {
         &self.client
     }
 
+    /// Borrow the JetStream `Context` derived from this client.
+    /// JetStream features (streams, consumers, KV, …) live behind this
+    /// type.
     pub fn jetstream(&self) -> &JetStreamContext {
         &self.jetstream
     }
 
+    /// Connection URL the client was opened against.
     pub fn url(&self) -> &str {
         &self.url
     }
 }
 
+/// `IntegrationProvider` impl for NATS. Register an instance of this
+/// with the bootstrap pipeline to bring up an `async_nats::Client` from
+/// the `[integrations.messaging.nats]` config section.
 #[derive(Debug, Default)]
 pub struct NatsProvider;
 
@@ -85,9 +105,9 @@ impl IntegrationProvider for NatsProvider {
         let nats_cfg = &cfg.integrations.messaging.nats;
         validate_url(&nats_cfg.url)?;
 
-        let client = async_nats::connect(&nats_cfg.url).await.map_err(|e| {
-            CoreError::integration(KEY, IntegrationFailureKind::ConnectionRefused, e)
-        })?;
+        let client = async_nats::connect(&nats_cfg.url)
+            .await
+            .map_err(|e| CoreError::integration(KEY, classify_nats_connect_error(&e), e))?;
 
         // Verify the connection is alive by flushing any pending messages.
         client
@@ -150,6 +170,26 @@ impl HealthCheck for NatsHealthCheck {
             other => Err(format!("nats connection not ready: {other:?}")),
         }
     }
+}
+
+/// Map a `async_nats::ConnectError` to the corresponding
+/// [`IntegrationFailureKind`].
+///
+/// `async_nats` 0.35 doesn't expose its internal error variants
+/// publicly, so we walk the [`std::error::Error::source`] chain looking
+/// for an `io::Error` with `ErrorKind::TimedOut`. This is robust to the
+/// crate moving variants around in patch releases.
+fn classify_nats_connect_error(err: &async_nats::ConnectError) -> IntegrationFailureKind {
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = current {
+        if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+            if io_err.kind() == std::io::ErrorKind::TimedOut {
+                return IntegrationFailureKind::Timeout;
+            }
+        }
+        current = e.source();
+    }
+    IntegrationFailureKind::ConnectionRefused
 }
 
 #[cfg(test)]

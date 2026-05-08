@@ -1,3 +1,12 @@
+//! HwhKit PostgreSQL integration.
+//!
+//! Wires a `sqlx::PgPool` into the bootstrap `AppContext` so handlers
+//! can pull a typed [`PostgresHandle`] out via `ctx.get::<PostgresHandle>()`.
+//! The provider also registers a readiness health check that issues
+//! `SELECT 1` against the live pool.
+
+#![warn(missing_docs)]
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -11,11 +20,20 @@ use serde::{Deserialize, Serialize};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
 
+/// Standalone Postgres section schema, kept here for callers that
+/// drive the integration without going through `hwhkit_config::AppConfig`.
+///
+/// The bootstrap pipeline reads its configuration from
+/// `hwhkit_config::PostgresIntegrationConfig` instead — this type is a
+/// thin mirror of those fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct PostgresConfig {
+    /// Whether the integration should be initialised at bootstrap.
     pub enabled: bool,
+    /// `postgres://` / `postgresql://` connection URL.
     pub url: String,
+    /// Maximum number of pooled connections (`PgPoolOptions::max_connections`).
     pub max_connections: u32,
 }
 
@@ -38,15 +56,20 @@ impl PostgresHandle {
         &self.pool
     }
 
+    /// Connection URL the pool was opened against.
     pub fn url(&self) -> &str {
         &self.url
     }
 
+    /// `max_connections` value the pool was configured with.
     pub fn max_connections(&self) -> u32 {
         self.max_connections
     }
 }
 
+/// `IntegrationProvider` impl for Postgres. Register an instance of
+/// this with the bootstrap pipeline to bring up a `sqlx::PgPool` from
+/// the `[integrations.sql.postgres]` config section.
 #[derive(Debug, Default)]
 pub struct PostgresProvider;
 
@@ -85,14 +108,13 @@ impl IntegrationProvider for PostgresProvider {
             .max_connections(postgres.max_connections.max(1))
             .connect(&postgres.url)
             .await
-            .map_err(|e| {
-                CoreError::integration(KEY, IntegrationFailureKind::ConnectionRefused, e)
-            })?;
+            .map_err(|e| CoreError::integration(KEY, classify_sqlx_error(&e), e))?;
 
         // Smoke test the connection.
-        sqlx::query("SELECT 1").execute(&pool).await.map_err(|e| {
-            CoreError::integration(KEY, IntegrationFailureKind::ConnectionRefused, e)
-        })?;
+        sqlx::query("SELECT 1")
+            .execute(&pool)
+            .await
+            .map_err(|e| CoreError::integration(KEY, classify_sqlx_error(&e), e))?;
 
         if postgres.migrations.run_on_start {
             run_migrations(&pool, &postgres.migrations.path).await?;
@@ -123,6 +145,23 @@ impl IntegrationProvider for PostgresProvider {
             handle.pool.close().await;
         }
         Ok(())
+    }
+}
+
+/// Map a `sqlx::Error` produced during `init` into the corresponding
+/// [`IntegrationFailureKind`].
+///
+/// Pool acquisition timeouts (`PoolTimedOut`) and IO timeouts surface as
+/// [`IntegrationFailureKind::Timeout`] so the bootstrap retry loop can
+/// distinguish them from `ConnectionRefused` (the same `is_transient`,
+/// but the operator log can blame the right thing).
+fn classify_sqlx_error(err: &sqlx::Error) -> IntegrationFailureKind {
+    match err {
+        sqlx::Error::PoolTimedOut => IntegrationFailureKind::Timeout,
+        sqlx::Error::Io(io_err) if io_err.kind() == std::io::ErrorKind::TimedOut => {
+            IntegrationFailureKind::Timeout
+        }
+        _ => IntegrationFailureKind::ConnectionRefused,
     }
 }
 
@@ -200,5 +239,33 @@ mod tests {
             }
             _ => panic!("expected Integration variant"),
         }
+    }
+
+    #[test]
+    fn classify_sqlx_pool_timeout_to_timeout() {
+        assert!(matches!(
+            classify_sqlx_error(&sqlx::Error::PoolTimedOut),
+            IntegrationFailureKind::Timeout
+        ));
+    }
+
+    #[test]
+    fn classify_sqlx_io_timeout_to_timeout() {
+        let io = std::io::Error::from(std::io::ErrorKind::TimedOut);
+        assert!(matches!(
+            classify_sqlx_error(&sqlx::Error::Io(io)),
+            IntegrationFailureKind::Timeout
+        ));
+    }
+
+    #[test]
+    fn classify_sqlx_other_to_connection_refused() {
+        // PoolClosed is a stable variant we can construct without a real
+        // server; any non-timeout sqlx error should fall through to
+        // ConnectionRefused.
+        assert!(matches!(
+            classify_sqlx_error(&sqlx::Error::PoolClosed),
+            IntegrationFailureKind::ConnectionRefused
+        ));
     }
 }

@@ -14,6 +14,10 @@ members = [
     "crates/hwhkit-integration-s3",
     "crates/hwhkit-scheduler",
     "crates/cargo-hwhkit",
+    # Worked examples — see `examples/README.md`.
+    "examples/minimal",
+    "examples/postgres-rest",
+    "examples/full-stack",
 ]
 resolver = "2"
 

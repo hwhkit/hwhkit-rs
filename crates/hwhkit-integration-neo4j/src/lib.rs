@@ -1,3 +1,10 @@
+//! HwhKit Neo4j integration.
+//!
+//! Wires a `neo4rs::Graph` connection pool into the bootstrap
+//! `AppContext` and exposes a `RETURN 1`-based readiness probe.
+
+#![warn(missing_docs)]
+
 use async_trait::async_trait;
 use hwhkit_config::AppConfig;
 use hwhkit_core::{
@@ -8,12 +15,18 @@ use neo4rs::{ConfigBuilder, Graph};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 
+/// Standalone Neo4j section schema, mirrored from
+/// `hwhkit_config::Neo4jIntegrationConfig`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct Neo4jConfig {
+    /// Whether the integration should be initialised at bootstrap.
     pub enabled: bool,
+    /// `bolt://` / `bolt+s://` / `neo4j://` / `neo4j+s://` URL.
     pub url: String,
+    /// Database username; must be non-empty.
     pub username: String,
+    /// Database password.
     pub password: String,
 }
 
@@ -38,19 +51,26 @@ impl std::fmt::Debug for Neo4jHandle {
 }
 
 impl Neo4jHandle {
+    /// Borrow the underlying `neo4rs::Graph` connection pool.
     pub fn graph(&self) -> &Graph {
         &self.graph
     }
 
+    /// URL the pool was opened against.
     pub fn url(&self) -> &str {
         &self.url
     }
 
+    /// Username the pool authenticated as. The password is intentionally
+    /// not exposed via an accessor.
     pub fn username(&self) -> &str {
         &self.username
     }
 }
 
+/// `IntegrationProvider` impl for Neo4j. Register an instance of this
+/// with the bootstrap pipeline to bring up a `neo4rs::Graph` from the
+/// `[integrations.neo4j]` config section.
 #[derive(Debug, Default)]
 pub struct Neo4jProvider;
 
@@ -103,9 +123,9 @@ impl IntegrationProvider for Neo4jProvider {
             .build()
             .map_err(|e| CoreError::integration(KEY, IntegrationFailureKind::Misconfigured, e))?;
 
-        let graph = Graph::connect(config).await.map_err(|e| {
-            CoreError::integration(KEY, IntegrationFailureKind::ConnectionRefused, e)
-        })?;
+        let graph = Graph::connect(config)
+            .await
+            .map_err(|e| CoreError::integration(KEY, classify_neo4j_error(&e), e))?;
 
         // Live `RETURN 1` ping. `Graph::run` consumes the query and
         // resolves once Neo4j has acknowledged the statement; if the
@@ -155,6 +175,29 @@ impl HealthCheck for Neo4jHealthCheck {
             .map(|_| ())
             .map_err(|e| format!("RETURN 1 failed: {e}"))
     }
+}
+
+/// Map a `neo4rs::Error` to the corresponding [`IntegrationFailureKind`].
+///
+/// neo4rs collapses many transport errors into opaque variants, so we
+/// walk the `std::error::Error::source` chain looking for an `io::Error`
+/// of kind `TimedOut`. As a backstop we also string-match the Display
+/// representation for `"timed out"` / `"timeout"`.
+fn classify_neo4j_error(err: &neo4rs::Error) -> IntegrationFailureKind {
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = current {
+        if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+            if io_err.kind() == std::io::ErrorKind::TimedOut {
+                return IntegrationFailureKind::Timeout;
+            }
+        }
+        current = e.source();
+    }
+    let display = err.to_string().to_ascii_lowercase();
+    if display.contains("timed out") || display.contains("timeout") {
+        return IntegrationFailureKind::Timeout;
+    }
+    IntegrationFailureKind::ConnectionRefused
 }
 
 #[cfg(test)]

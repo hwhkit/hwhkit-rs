@@ -5,11 +5,12 @@
 //! middleware returns a 429 response with `Retry-After` and an RFC 7807
 //! `application/problem+json` body.
 //!
-//! The keying strategy is pluggable via [`KeyExtractor`]:
+//! The keying strategy is pluggable via the `KeyExtractor` trait
+//! (built into this module):
 //!
-//! - [`PerIp`] — keys by the connection's remote address (or `X-Forwarded-For`)
-//! - [`PerRoute`] — keys by `<METHOD>:<PATH>`
-//! - [`PerUser`] — keys by a JWT-derived user id from request extensions
+//! - `PerIp` — keys by the connection's remote address (or `X-Forwarded-For`)
+//! - `PerRoute` — keys by `<METHOD>:<PATH>`
+//! - `PerUser` — keys by a JWT-derived user id from request extensions
 //!
 //! Builder API:
 //!

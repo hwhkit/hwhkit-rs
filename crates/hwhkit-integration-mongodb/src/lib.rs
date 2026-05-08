@@ -1,3 +1,10 @@
+//! HwhKit MongoDB integration.
+//!
+//! Wires a `mongodb::Client` into the bootstrap `AppContext` and
+//! registers a readiness probe that runs `db.adminCommand({ping: 1})`.
+
+#![warn(missing_docs)]
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -10,11 +17,17 @@ use mongodb::bson::doc;
 use mongodb::Client;
 use serde::{Deserialize, Serialize};
 
+/// Standalone MongoDB section schema, mirrored from
+/// `hwhkit_config::MongoDbIntegrationConfig`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct MongoDbConfig {
+    /// Whether the integration should be initialised at bootstrap.
     pub enabled: bool,
+    /// `mongodb://` or `mongodb+srv://` connection URL.
     pub url: String,
+    /// Name of the default database the handle's `database()` accessor
+    /// returns.
     pub database: String,
 }
 
@@ -39,23 +52,33 @@ impl std::fmt::Debug for MongoDbHandle {
 }
 
 impl MongoDbHandle {
+    /// Borrow the underlying `mongodb::Client`.
     pub fn client(&self) -> &Client {
         &self.client
     }
 
+    /// Returns a fresh `mongodb::Database` handle bound to the
+    /// configured default database. The returned value is internally
+    /// `Arc`-backed; this is *not* a long-lived getter.
     pub fn database(&self) -> mongodb::Database {
         self.client.database(&self.database)
     }
 
+    /// Name of the configured default database (the one `database()`
+    /// returns). Useful for logging / connection-string display.
     pub fn database_name(&self) -> &str {
         &self.database
     }
 
+    /// Connection URL the client was opened against.
     pub fn url(&self) -> &str {
         &self.url
     }
 }
 
+/// `IntegrationProvider` impl for MongoDB. Register an instance of this
+/// with the bootstrap pipeline to bring up a `mongodb::Client` from the
+/// `[integrations.mongodb]` config section.
 #[derive(Debug, Default)]
 pub struct MongoDbProvider;
 
@@ -99,9 +122,7 @@ impl IntegrationProvider for MongoDbProvider {
             .database("admin")
             .run_command(doc! { "ping": 1 }, None)
             .await
-            .map_err(|e| {
-                CoreError::integration(KEY, IntegrationFailureKind::ConnectionRefused, e)
-            })?;
+            .map_err(|e| CoreError::integration(KEY, classify_mongo_error(&e), e))?;
 
         ctx.insert(MongoDbHandle {
             url: mongo_cfg.url.clone(),
@@ -146,6 +167,23 @@ impl HealthCheck for MongoDbHealthCheck {
     }
 }
 
+/// Map a `mongodb::error::Error` to the corresponding
+/// [`IntegrationFailureKind`].
+///
+/// `Io` errors carrying `io::ErrorKind::TimedOut` are surfaced as
+/// [`IntegrationFailureKind::Timeout`]; everything else falls through to
+/// [`IntegrationFailureKind::ConnectionRefused`] (preserving prior
+/// behaviour for non-timeout failures).
+fn classify_mongo_error(err: &mongodb::error::Error) -> IntegrationFailureKind {
+    use mongodb::error::ErrorKind;
+    if let ErrorKind::Io(io_err) = &*err.kind {
+        if io_err.kind() == std::io::ErrorKind::TimedOut {
+            return IntegrationFailureKind::Timeout;
+        }
+    }
+    IntegrationFailureKind::ConnectionRefused
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -161,5 +199,18 @@ mod tests {
     fn accepts_mongo_url_schemes() {
         assert!(validate_url("mongodb://localhost:27017").is_ok());
         assert!(validate_url("mongodb+srv://user:pw@cluster.example.com").is_ok());
+    }
+
+    #[test]
+    fn classify_mongo_io_timeout_to_timeout() {
+        let io = std::io::Error::from(std::io::ErrorKind::TimedOut);
+        // mongodb::error::Error has a From<std::io::Error> impl that
+        // wraps it as `ErrorKind::Io(...)` — exactly the path our
+        // classifier targets.
+        let mongo_err: mongodb::error::Error = io.into();
+        assert!(matches!(
+            classify_mongo_error(&mongo_err),
+            IntegrationFailureKind::Timeout
+        ));
     }
 }

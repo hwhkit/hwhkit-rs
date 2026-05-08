@@ -59,7 +59,7 @@ HwhKit 是一个面向 Rust Web 服务的工程化脚手架库，目标是把不
 2. 配置分层加载：`config/default.toml -> config/{env}.toml -> ENV(HWHKIT__) -> remote patch`。
 3. 严格校验：配置合法性 + feature/config 一致性校验。
 4. 集成 provider：`postgres/redis/mongodb/nats/qdrant/neo4j/s3` —— Handle 内承载真实连接池，并自动暴露 readiness 健康检查。
-5. 模板初始化：`minimal-api`、`api-grpc`、`realtime-event`。
+5. 模板初始化：`minimal-api`（0.6 起仅保留这一个模板；旧的 `api-grpc` / `realtime-event` 因 `transport-grpc` / `transport-ws` 特性已移除而下线）。
 
 ## 仓库结构
 
@@ -155,7 +155,7 @@ cargo run -p cargo-hwhkit -- init my-service --template minimal-api
 
 ```bash
 cargo install --path crates/cargo-hwhkit
-cargo hwhkit init my-service --template api-grpc
+cargo hwhkit init my-service --template minimal-api
 ```
 
 ## 快速开始 (OOTB)

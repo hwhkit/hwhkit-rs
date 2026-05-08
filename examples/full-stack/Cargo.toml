@@ -1,0 +1,32 @@
+[package]
+name = "hwhkit-example-full-stack"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "OOTB-everything example: postgres + redis + nats + s3 + jwt + rate-limit + idempotency + otel."
+
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+hwhkit = { path = "../../crates/hwhkit", default-features = false, features = [
+    "health-endpoints",
+    "metrics",
+    "process-metrics",
+    "version-endpoints",
+    "graceful-shutdown",
+    "request-id",
+    "middleware-bundle",
+    "multi-tenant",
+    "postgres",
+    "redis",
+    "nats",
+    "s3",
+    "jwt",
+    "rate-limit",
+    "idempotency",
+    "circuit-breaker",
+    "scheduler",
+    "otel",
+] }
+tokio = { workspace = true }

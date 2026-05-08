@@ -105,15 +105,57 @@ impl<K> JobSpec<K> {
     }
 }
 
+/// A persisted job record.
+///
+/// Stored verbatim by [`storage::JobStore`] implementations and
+/// reconstructed on read. Marked `#[non_exhaustive]` so future fields
+/// (e.g. priority, retry counters) can be added in a minor release —
+/// construct fresh instances via [`StoredJob::new`].
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[non_exhaustive]
 pub struct StoredJob {
+    /// Stable identifier (UUIDv7 for natural time-ordering).
     pub id: Uuid,
+    /// Serialized application-defined `Kind` payload.
     pub kind_json: serde_json::Value,
+    /// Recurrence policy — see [`Schedule`].
     pub schedule: Schedule,
+    /// Optional human-readable label, used for log spans.
     pub name: Option<String>,
+    /// UTC instant of the next firing.
     pub next_run_at: DateTime<Utc>,
+    /// UTC instant of the most recent successful run, if any.
     pub last_run_at: Option<DateTime<Utc>>,
+    /// UTC instant the job was first inserted.
     pub created_at: DateTime<Utc>,
+}
+
+impl StoredJob {
+    /// Construct a `StoredJob` from its component parts. Prefer this over
+    /// struct-literal syntax — `StoredJob` is `#[non_exhaustive]` so
+    /// future fields wouldn't be reachable from outside the crate
+    /// otherwise.
+    ///
+    /// `last_run_at` and `name` start as `None` and are populated by the
+    /// scheduler / store.
+    pub fn new(
+        id: Uuid,
+        kind_json: serde_json::Value,
+        schedule: Schedule,
+        name: Option<String>,
+        next_run_at: DateTime<Utc>,
+        created_at: DateTime<Utc>,
+    ) -> Self {
+        Self {
+            id,
+            kind_json,
+            schedule,
+            name,
+            next_run_at,
+            last_run_at: None,
+            created_at,
+        }
+    }
 }
 
 /// Type-erased async job handler. Receives the deserialized job kind.

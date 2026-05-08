@@ -97,9 +97,14 @@ enum MigrateAction {
 
 #[derive(Copy, Clone, Debug, ValueEnum)]
 enum TemplateKind {
+    /// Minimal HTTP API skeleton with all integrations enabled.
+    ///
+    /// In 0.6 we removed the `api-grpc` and `realtime-event` templates
+    /// because the `transport-grpc` and `transport-ws` feature flags they
+    /// referenced no longer exist. Pick `minimal-api` and add the bits
+    /// you need by hand — the templates were deleted rather than left
+    /// pointing at non-existent flags.
     MinimalApi,
-    ApiGrpc,
-    RealtimeEvent,
 }
 
 fn main() -> Result<()> {
@@ -283,8 +288,6 @@ fn init_project(name: &str, template: TemplateKind) -> Result<()> {
 
     match template {
         TemplateKind::MinimalApi => render_minimal_api(&root, &package_name)?,
-        TemplateKind::ApiGrpc => render_api_grpc(&root, &package_name)?,
-        TemplateKind::RealtimeEvent => render_realtime_event(&root, &package_name)?,
     }
 
     write_file(
@@ -332,20 +335,15 @@ fn create_common_layout(root: &Path) -> Result<()> {
 }
 
 fn render_minimal_api(root: &Path, name: &str) -> Result<()> {
+    // Generated services pull in `postgres` + `redis` by default — these
+    // are by far the most common picks and keep the smoke template
+    // useful out of the box. Other integrations are one Cargo.toml line
+    // away. We deliberately avoid `config-v2` (now the default; not a
+    // separate flag in 0.6+) and the deleted `transport-grpc` /
+    // `transport-ws` flags.
     write_file(
         &root.join("Cargo.toml"),
-        &cargo_toml(
-            name,
-            &[
-                "config-v2",
-                "postgres",
-                "redis",
-                "mongodb",
-                "nats",
-                "qdrant",
-                "neo4j",
-            ],
-        ),
+        &cargo_toml(name, &["postgres", "redis"]),
     )?;
     write_main(root)?;
     write_standard_app(root)?;
@@ -355,91 +353,6 @@ fn render_minimal_api(root: &Path, name: &str) -> Result<()> {
         "pub async fn health() -> &'static str {\n    \"ok\"\n}\n",
     )?;
     write_file(&root.join("src/domain/mod.rs"), "")?;
-    write_config_files(root, "dev")?;
-    patch_docker_app_name(root, name)?;
-    Ok(())
-}
-
-fn render_api_grpc(root: &Path, name: &str) -> Result<()> {
-    fs::create_dir_all(root.join("proto/app/v1"))?;
-    fs::create_dir_all(root.join("scripts"))?;
-
-    write_file(
-        &root.join("Cargo.toml"),
-        &cargo_toml(
-            name,
-            &[
-                "config-v2",
-                "transport-grpc",
-                "postgres",
-                "redis",
-                "mongodb",
-                "nats",
-            ],
-        ),
-    )?;
-    write_main(root)?;
-    write_standard_app(root)?;
-    write_file(
-        &root.join("src/routes/mod.rs"),
-        "pub mod health;\npub mod rest;\n",
-    )?;
-    write_file(
-        &root.join("src/routes/health.rs"),
-        "pub async fn health() -> &'static str {\n    \"ok\"\n}\n",
-    )?;
-    write_file(
-        &root.join("src/routes/rest.rs"),
-        "pub async fn hello() -> &'static str {\n    \"hello from rest\"\n}\n",
-    )?;
-    write_file(
-        &root.join("proto/app/v1/service.proto"),
-        "syntax = \"proto3\";\npackage app.v1;\n\nservice AppService {\n  rpc Ping (PingRequest) returns (PingReply);\n}\n\nmessage PingRequest {\n  string name = 1;\n}\n\nmessage PingReply {\n  string message = 1;\n}\n",
-    )?;
-    write_file(
-        &root.join("scripts/gen-proto.sh"),
-        "#!/usr/bin/env bash\nset -euo pipefail\n\necho \"Integrate tonic-build here for proto generation\"\n",
-    )?;
-    write_config_files(root, "dev")?;
-    patch_docker_app_name(root, name)?;
-    Ok(())
-}
-
-fn render_realtime_event(root: &Path, name: &str) -> Result<()> {
-    fs::create_dir_all(root.join("src/realtime"))?;
-
-    write_file(
-        &root.join("Cargo.toml"),
-        &cargo_toml(
-            name,
-            &[
-                "config-v2",
-                "transport-ws",
-                "nats",
-                "redis",
-                "mongodb",
-                "qdrant",
-            ],
-        ),
-    )?;
-    write_main(root)?;
-    write_standard_app(root)?;
-    write_file(
-        &root.join("src/routes/mod.rs"),
-        "pub mod health;\npub mod ws;\n",
-    )?;
-    write_file(
-        &root.join("src/routes/health.rs"),
-        "pub async fn health() -> &'static str {\n    \"ok\"\n}\n",
-    )?;
-    write_file(
-        &root.join("src/routes/ws.rs"),
-        "pub async fn ws_upgrade_placeholder() -> &'static str {\n    \"websocket endpoint placeholder\"\n}\n",
-    )?;
-    write_file(
-        &root.join("src/realtime/event_bus.rs"),
-        "pub fn publish_event_placeholder(topic: &str, payload: &str) {\n    println!(\"publish to {topic}: {payload}\");\n}\n",
-    )?;
     write_config_files(root, "dev")?;
     patch_docker_app_name(root, name)?;
     Ok(())
@@ -514,7 +427,5 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
 fn template_name(template: TemplateKind) -> &'static str {
     match template {
         TemplateKind::MinimalApi => "minimal-api",
-        TemplateKind::ApiGrpc => "api-grpc",
-        TemplateKind::RealtimeEvent => "realtime-event",
     }
 }

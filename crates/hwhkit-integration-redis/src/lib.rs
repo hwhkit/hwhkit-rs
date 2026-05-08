@@ -1,3 +1,11 @@
+//! HwhKit Redis / Dragonfly integration.
+//!
+//! Wires a `redis::Client` plus a managed async connection
+//! ([`redis::aio::ConnectionManager`]) into the bootstrap `AppContext`
+//! and registers a `PING`-based readiness probe.
+
+#![warn(missing_docs)]
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -9,10 +17,15 @@ use hwhkit_core::{
 use redis::aio::ConnectionManager;
 use serde::{Deserialize, Serialize};
 
+/// Standalone Redis section schema, mirrored from
+/// `hwhkit_config::RedisIntegrationConfig` for callers that drive the
+/// integration outside the bootstrap pipeline.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct RedisConfig {
+    /// Whether the integration should be initialised at bootstrap.
     pub enabled: bool,
+    /// `redis://` or `rediss://` connection URL.
     pub url: String,
 }
 
@@ -37,19 +50,27 @@ impl std::fmt::Debug for RedisHandle {
 }
 
 impl RedisHandle {
+    /// Borrow the underlying `redis::Client` (used to spawn fresh
+    /// connections — `Client` itself is `Arc`-backed and cheap).
     pub fn client(&self) -> &redis::Client {
         &self.client
     }
 
+    /// Cloned [`ConnectionManager`] suitable for use as the `&mut conn`
+    /// argument to `redis::cmd(...).query_async(&mut conn)`.
     pub fn manager(&self) -> ConnectionManager {
         self.manager.clone()
     }
 
+    /// Connection URL the client was opened against.
     pub fn url(&self) -> &str {
         &self.url
     }
 }
 
+/// `IntegrationProvider` impl for Redis. Register an instance of this
+/// with the bootstrap pipeline to bring up a managed Redis client from
+/// the `[integrations.redis]` config section.
 #[derive(Debug, Default)]
 pub struct RedisProvider;
 
@@ -87,17 +108,15 @@ impl IntegrationProvider for RedisProvider {
         let client = redis::Client::open(redis_cfg.url.as_str())
             .map_err(|e| CoreError::integration(KEY, IntegrationFailureKind::InvalidUrl, e))?;
 
-        let mut manager = ConnectionManager::new(client.clone()).await.map_err(|e| {
-            CoreError::integration(KEY, IntegrationFailureKind::ConnectionRefused, e)
-        })?;
+        let mut manager = ConnectionManager::new(client.clone())
+            .await
+            .map_err(|e| CoreError::integration(KEY, classify_redis_error(&e), e))?;
 
         // Ping to verify reachability.
         let pong: String = redis::cmd("PING")
             .query_async(&mut manager)
             .await
-            .map_err(|e| {
-                CoreError::integration(KEY, IntegrationFailureKind::ConnectionRefused, e)
-            })?;
+            .map_err(|e| CoreError::integration(KEY, classify_redis_error(&e), e))?;
 
         if pong.to_uppercase() != "PONG" {
             return Err(CoreError::integration_msg(
@@ -167,6 +186,30 @@ impl HealthCheck for RedisHealthCheck {
     }
 }
 
+/// Map a `redis::RedisError` to the corresponding
+/// [`IntegrationFailureKind`].
+///
+/// Redis surfaces timeouts via [`redis::RedisError::is_timeout`]. We
+/// also walk the [`std::error::Error::source`] chain looking for an
+/// `io::Error` of kind `TimedOut` so OS-level timeouts surface
+/// correctly even when the high-level helper misses them. Anything else
+/// stays classified as [`IntegrationFailureKind::ConnectionRefused`].
+fn classify_redis_error(err: &redis::RedisError) -> IntegrationFailureKind {
+    if err.is_timeout() {
+        return IntegrationFailureKind::Timeout;
+    }
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = current {
+        if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+            if io_err.kind() == std::io::ErrorKind::TimedOut {
+                return IntegrationFailureKind::Timeout;
+            }
+        }
+        current = e.source();
+    }
+    IntegrationFailureKind::ConnectionRefused
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,5 +225,17 @@ mod tests {
     fn accepts_redis_url_schemes() {
         assert!(validate_url("redis://localhost:6379").is_ok());
         assert!(validate_url("rediss://user:pw@localhost:6380/0").is_ok());
+    }
+
+    #[test]
+    fn classify_redis_io_timeout_to_timeout() {
+        // Build a RedisError from an io::TimedOut so we exercise
+        // `io_error_kind()` rather than the higher-level `is_timeout()`.
+        let io = std::io::Error::from(std::io::ErrorKind::TimedOut);
+        let err: redis::RedisError = io.into();
+        assert!(matches!(
+            classify_redis_error(&err),
+            IntegrationFailureKind::Timeout
+        ));
     }
 }

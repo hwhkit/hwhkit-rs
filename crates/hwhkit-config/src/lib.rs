@@ -682,7 +682,14 @@ impl Default for Neo4jConfig {
     }
 }
 
+/// A partial configuration overlay (a JSON object whose keys map to
+/// dotted [`AppConfig`] paths).
+///
+/// Patches feed into the [`ConfigLoader`] merge pipeline. Marked
+/// `#[non_exhaustive]` so new metadata fields can be added without
+/// breaking pattern-matching callers.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct ConfigPatch {
     value: Value,
 }
@@ -835,7 +842,14 @@ pub trait RemoteConfigProvider: Send + Sync {
     async fn fetch_patch(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch>;
 }
 
+/// Allow-list policy that gates which dotted config paths a remote
+/// patch may overwrite.
+///
+/// The strict defaults (see [`RemotePatchPolicy::strict_defaults`]) only
+/// accept observability knobs. Marked `#[non_exhaustive]` so future
+/// fields (deny lists, callbacks, …) don't break pattern matching.
 #[derive(Clone, Debug)]
+#[non_exhaustive]
 pub struct RemotePatchPolicy {
     allowed_paths: BTreeSet<String>,
 }
@@ -944,10 +958,34 @@ impl ConfigLoader {
     }
 }
 
+/// The resolved [`AppConfig`] together with the list of sources that
+/// contributed to it.
+///
+/// Returned by [`ConfigLoader::load`]. Marked `#[non_exhaustive]` so
+/// future fields (e.g. effective env, override origin tracking) can be
+/// added without breaking match patterns; access via the
+/// [`LoadedConfig::config`] / [`LoadedConfig::applied_sources`] methods.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct LoadedConfig {
+    /// The fully merged + validated configuration.
     pub config: AppConfig,
+    /// Human-readable identifiers of the sources whose patches were
+    /// successfully merged (file paths, `env`, remote-source names…).
     pub applied_sources: Vec<String>,
+}
+
+impl LoadedConfig {
+    /// Borrow the resolved [`AppConfig`].
+    pub fn config(&self) -> &AppConfig {
+        &self.config
+    }
+
+    /// Sources that contributed to the final configuration, in the order
+    /// they were applied.
+    pub fn applied_sources(&self) -> &[String] {
+        &self.applied_sources
+    }
 }
 
 fn read_toml_patch(path: PathBuf, required: bool) -> Result<ConfigPatch> {

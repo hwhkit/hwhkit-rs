@@ -1,3 +1,10 @@
+//! HwhKit S3-compatible storage integration (AWS S3 / MinIO).
+//!
+//! Wires an `aws_sdk_s3::Client` into the bootstrap `AppContext` and
+//! exposes a `head_bucket` readiness probe.
+
+#![warn(missing_docs)]
+
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -14,16 +21,30 @@ use hwhkit_core::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Standalone S3 section schema, mirrored from
+/// `hwhkit_config::S3IntegrationConfig`.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct S3Config {
+    /// Whether the integration should be initialised at bootstrap.
     pub enabled: bool,
+    /// If `true`, an `init` failure aborts bootstrap; otherwise the
+    /// integration is recorded as degraded.
     pub required: bool,
+    /// Optional endpoint URL — empty string falls back to the AWS
+    /// default endpoint resolution. Use for MinIO / LocalStack.
     pub endpoint: String,
+    /// AWS region (e.g. `us-east-1`). Required.
     pub region: String,
+    /// Bucket name probed by the readiness check.
     pub bucket: String,
+    /// Static access key id; falls back to the AWS credential provider
+    /// chain when empty.
     pub access_key_id: String,
+    /// Static secret access key; paired with `access_key_id`.
     pub secret_access_key: String,
+    /// Force path-style addressing (required for MinIO and many
+    /// S3-compatible providers).
     pub force_path_style: bool,
 }
 
@@ -50,23 +71,32 @@ impl std::fmt::Debug for S3Handle {
 }
 
 impl S3Handle {
+    /// Borrow the underlying `aws_sdk_s3::Client`.
     pub fn client(&self) -> &Client {
         &self.client
     }
 
+    /// Bucket name the handle is configured to operate on.
     pub fn bucket(&self) -> &str {
         &self.bucket
     }
 
+    /// AWS region the client was built with.
     pub fn region(&self) -> &str {
         &self.region
     }
 
+    /// Configured custom endpoint, if any (e.g. MinIO host). `None`
+    /// when using the default AWS endpoint resolution.
     pub fn endpoint(&self) -> Option<&str> {
         self.endpoint.as_deref()
     }
 }
 
+/// `IntegrationProvider` impl for S3-compatible storage. Register an
+/// instance of this with the bootstrap pipeline to bring up an
+/// `aws_sdk_s3::Client` from the `[integrations.storage.s3]` config
+/// section.
 #[derive(Debug, Default)]
 pub struct S3Provider;
 
@@ -166,11 +196,8 @@ impl IntegrationProvider for S3Provider {
                     }
                 }
                 other => {
-                    return Err(CoreError::integration(
-                        KEY,
-                        IntegrationFailureKind::ConnectionRefused,
-                        other,
-                    ));
+                    let kind = classify_s3_sdk_error(&other);
+                    return Err(CoreError::integration(KEY, kind, other));
                 }
             }
         }
@@ -239,6 +266,33 @@ impl HealthCheck for S3HealthCheck {
             },
         }
     }
+}
+
+/// Map a non-service `SdkError` (network / TLS / credential / timeout)
+/// to the corresponding [`IntegrationFailureKind`].
+///
+/// `SdkError::TimeoutError` is the canonical timeout signal; we also
+/// inspect the underlying `DispatchFailure` for an `io::Error` of kind
+/// `TimedOut`. Everything else is reported as
+/// [`IntegrationFailureKind::ConnectionRefused`] (the previous default).
+fn classify_s3_sdk_error<E, R>(err: &SdkError<E, R>) -> IntegrationFailureKind
+where
+    E: std::error::Error + 'static,
+    R: std::fmt::Debug + 'static,
+{
+    if matches!(err, SdkError::TimeoutError(_)) {
+        return IntegrationFailureKind::Timeout;
+    }
+    let mut current: Option<&(dyn std::error::Error + 'static)> = Some(err);
+    while let Some(e) = current {
+        if let Some(io_err) = e.downcast_ref::<std::io::Error>() {
+            if io_err.kind() == std::io::ErrorKind::TimedOut {
+                return IntegrationFailureKind::Timeout;
+            }
+        }
+        current = e.source();
+    }
+    IntegrationFailureKind::ConnectionRefused
 }
 
 #[cfg(test)]

@@ -1,6 +1,6 @@
 //! Process-level Prometheus metrics powered by `sysinfo`.
 //!
-//! Samples the running process every [`SAMPLE_INTERVAL`] and updates
+//! Samples the running process every five seconds and updates
 //! gauges/counter exposed via the existing `/metrics` recorder:
 //!
 //! - `process_resident_memory_bytes` (gauge)

@@ -119,7 +119,13 @@ struct CachedKey {
     decoding: DecodingKey,
 }
 
+/// Tunables for [`JwtVerifier`].
+///
+/// Six independent optional fields → use the [`JwtVerifierConfigBuilder`]
+/// returned by [`JwtVerifierConfig::builder`] for ergonomic construction.
+/// Marked `#[non_exhaustive]` so future fields don't break callers.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
 pub struct JwtVerifierConfig {
     /// Issuer claim required on every token (`iss`). Empty → not enforced.
     pub issuer: Option<String>,
@@ -148,6 +154,68 @@ impl Default for JwtVerifierConfig {
             algorithms: vec!["RS256".to_string()],
             leeway_secs: 30,
         }
+    }
+}
+
+impl JwtVerifierConfig {
+    /// Start a [`JwtVerifierConfigBuilder`] seeded with default values.
+    #[must_use = "builder does nothing until consumed via .build()"]
+    pub fn builder() -> JwtVerifierConfigBuilder {
+        JwtVerifierConfigBuilder::default()
+    }
+}
+
+/// Fluent builder for [`JwtVerifierConfig`].
+///
+/// All fields are optional; unset fields fall back to the
+/// [`JwtVerifierConfig::default`] value. Construct via
+/// [`JwtVerifierConfig::builder`].
+#[derive(Debug, Default, Clone)]
+#[must_use = "builder does nothing until consumed via .build()"]
+pub struct JwtVerifierConfigBuilder {
+    inner: JwtVerifierConfig,
+}
+
+impl JwtVerifierConfigBuilder {
+    /// Require this issuer on every verified token.
+    pub fn issuer(mut self, iss: impl Into<String>) -> Self {
+        self.inner.issuer = Some(iss.into());
+        self
+    }
+
+    /// Require this audience on every verified token.
+    pub fn audience(mut self, aud: impl Into<String>) -> Self {
+        self.inner.audience = Some(aud.into());
+        self
+    }
+
+    /// Set the JWKS endpoint to fetch signing keys from.
+    pub fn jwks_url(mut self, url: impl Into<String>) -> Self {
+        self.inner.jwks_url = Some(url.into());
+        self
+    }
+
+    /// Override the JWKS cache TTL (default 1 hour).
+    pub fn cache_ttl(mut self, ttl: Duration) -> Self {
+        self.inner.cache_ttl = ttl;
+        self
+    }
+
+    /// Replace the accepted algorithm list (default `["RS256"]`).
+    pub fn algorithms(mut self, algs: Vec<String>) -> Self {
+        self.inner.algorithms = algs;
+        self
+    }
+
+    /// Override the `exp` / `nbf` leeway in seconds (default 30s).
+    pub fn leeway_secs(mut self, secs: u64) -> Self {
+        self.inner.leeway_secs = secs;
+        self
+    }
+
+    /// Materialize the final [`JwtVerifierConfig`].
+    pub fn build(self) -> JwtVerifierConfig {
+        self.inner
     }
 }
 

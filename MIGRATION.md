@@ -34,6 +34,13 @@ overhauled. Most fixes are mechanical.
   `transport-grpc` / `transport-ws` / `transport-p2p` cargo features
   from your service. The `[transport]` block in your config files can
   also be removed (the field is gone from `AppConfig`).
+- **`cargo hwhkit init` templates trimmed** — only `minimal-api`
+  remains. The `api-grpc` and `realtime-event` templates (which
+  referenced the deleted transport features) have been removed; if you
+  generated a project with one of them in 0.5 or earlier, drop the
+  `transport-grpc` / `transport-ws` features from its `Cargo.toml` and
+  remove the placeholder `proto/` / `src/realtime/` scaffolding the
+  template wrote.
 - **Bulk re-exports gone** — `hwhkit::*` no longer re-exports
   `axum::*`, `tokio`, `serde::Serialize/Deserialize`, or
   `tower_http::cors::CorsLayer`. Add direct deps on those crates and

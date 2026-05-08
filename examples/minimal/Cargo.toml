@@ -1,0 +1,13 @@
+[package]
+name = "hwhkit-example-minimal"
+version = "0.0.0"
+edition = "2021"
+publish = false
+license = "MIT OR Apache-2.0"
+description = "The minimum possible hwhkit application — one handler, default bootstrap."
+
+[dependencies]
+async-trait = { workspace = true }
+axum = { workspace = true }
+hwhkit = { path = "../../crates/hwhkit", default-features = false, features = ["health-endpoints", "version-endpoints", "graceful-shutdown", "request-id", "middleware-bundle"] }
+tokio = { workspace = true }

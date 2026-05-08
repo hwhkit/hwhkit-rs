@@ -1,6 +1,6 @@
 //! Health-check registry consumed by the `/health/ready` endpoint.
 //!
-//! Each [`IntegrationProvider`] can register a [`HealthCheck`] during init.
+//! Each [`crate::IntegrationProvider`] can register a [`HealthCheck`] during init.
 //! At runtime, the readiness probe runs every check concurrently and reports
 //! per-integration status. Required failures yield 503; optional failures
 //! mark the service "degraded" but still return 200.

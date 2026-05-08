@@ -1,5 +1,5 @@
 //! Standard tower middleware bundle applied automatically by
-//! [`crate::run_v2`]: tracing/spans, CORS, gzip+br compression,
+//! [`crate::run_and_serve`]: tracing/spans, CORS, gzip+br compression,
 //! request timeout, body size limit, panic catcher (returns
 //! `application/problem+json`), and sensitive-header redaction.
 

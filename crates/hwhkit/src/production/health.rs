@@ -1,9 +1,9 @@
 //! `/health` (liveness) and `/health/ready` (readiness) handlers.
 //!
 //! Liveness always returns 200 if the process is up. Readiness runs every
-//! [`HealthCheck`] registered on the [`HealthRegistry`] (each integration
-//! provider registers one during init). Required failures yield 503;
-//! optional failures degrade to 200 with a `degraded: true` flag.
+//! [`hwhkit_core::HealthCheck`] registered on the [`HealthRegistry`] (each
+//! integration provider registers one during init). Required failures
+//! yield 503; optional failures degrade to 200 with a `degraded: true` flag.
 
 use std::sync::Arc;
 

@@ -24,6 +24,11 @@ contain breaking changes until `1.0`.
   lands.
 - Removed feature flags `transport-grpc`, `transport-ws`,
   `transport-p2p`, `config-v2`, `templates`, `macros`.
+- Removed `cargo hwhkit init` templates `api-grpc` and `realtime-event`
+  (they referenced the deleted `transport-grpc` / `transport-ws` flags
+  and produced projects that did not compile). `minimal-api` is the
+  only template shipped in 0.6; reach for it and add the bits you need
+  by hand.
 - Removed bulk `axum::*` / `tokio` / `serde::*` / `tower_http::cors::CorsLayer`
   re-exports from `hwhkit::*`. Depend on those crates directly.
 - Removed `IntegrationProvider::feature()` — collapsed into `key()`.
