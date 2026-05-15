@@ -1045,7 +1045,7 @@ dependencies = [
 
 [[package]]
 name = "cargo-hwhkit"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "anyhow",
  "clap",
@@ -2321,7 +2321,7 @@ checksum = "df3b46402a9d5adb4c86a0cf463f42e19994e3ee891101b1841f30a545cb49a9"
 
 [[package]]
 name = "hwhkit"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2373,7 +2373,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-buildinfo"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "serde",
  "serde_json",
@@ -2381,7 +2381,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-config"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "proptest",
@@ -2396,7 +2396,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-core"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2454,7 +2454,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-integration-mongodb"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "hwhkit-config",
@@ -2469,7 +2469,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-integration-nats"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-nats",
  "async-trait",
@@ -2485,7 +2485,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-integration-neo4j"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "hwhkit-config",
@@ -2500,7 +2500,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-integration-oss"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "aliyun-oss-client",
  "async-trait",
@@ -2514,7 +2514,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-integration-postgres"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "hwhkit-config",
@@ -2530,7 +2530,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-integration-qdrant"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "hwhkit-config",
@@ -2544,7 +2544,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-integration-redis"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "hwhkit-config",
@@ -2559,7 +2559,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-integration-s3"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -2576,7 +2576,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-observability"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "futures",
@@ -2597,7 +2597,7 @@ dependencies = [
 
 [[package]]
 name = "hwhkit-scheduler"
-version = "0.6.0-alpha.1"
+version = "0.6.0-alpha.2"
 dependencies = [
  "async-trait",
  "chrono",
