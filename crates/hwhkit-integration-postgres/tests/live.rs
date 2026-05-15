@@ -90,15 +90,21 @@ async fn live_postgres_full_lifecycle() {
         .expect("SELECT 42 round-trip");
     assert_eq!(row.0, 42);
 
-    // 5. Bounded shutdown. Today `PostgresProvider::shutdown` calls
-    //    `PgPool::close().await` directly (audit finding F6 — can hang
-    //    indefinitely). After P0d lands this assertion will tighten to
-    //    `tokio::time::timeout(..., shutdown)` with a budget. For now
-    //    we just verify the happy path returns Ok.
-    provider
-        .shutdown(&ctx)
+    // 5. Bounded shutdown (audit finding F6 — fixed in commit
+    //    1eb0420). The shutdown future must complete well within
+    //    `shutdown_timeout_ms` (default 5s). We give it a 2s budget
+    //    here: enough headroom to release sockets, tight enough to
+    //    fail the test if a regression reintroduces an unbounded wait.
+    let started = std::time::Instant::now();
+    tokio::time::timeout(std::time::Duration::from_secs(2), provider.shutdown(&ctx))
         .await
-        .expect("provider shutdown against live postgres");
+        .expect("provider shutdown must complete inside shutdown_timeout")
+        .expect("provider shutdown returned error");
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(2),
+        "shutdown took {elapsed:?}; should be sub-second on idle pool"
+    );
 }
 
 /// Cancellation contract: an unreachable URL must surface as a typed

@@ -60,15 +60,44 @@ contain breaking changes until `1.0`.
   integration crates so `tokio::time::timeout` is available without
   pulling tokio's full feature surface into the lib crate.
 
+### Added — observability (audit F2 + F8)
+
+- **F2 / postgres saturation metrics** — `hwhkit-integration-postgres`
+  now spawns a background sampler that emits two gauges every 10 s:
+  - `postgres_pool_size{integration="postgres"}` — total connections
+    owned by the pool (open + idle + in-use).
+  - `postgres_pool_idle{integration="postgres"}` — connections in the
+    free list. `pool_size - pool_idle` = in-use, derivable on the
+    dashboard.
+
+  The sampler shuts down cleanly when `PgPool::is_closed()` returns
+  true (during graceful shutdown). Gauges are emitted via the
+  `metrics` crate — calls are no-ops when no recorder is installed,
+  so this is safe for binaries that don't enable the `hwhkit/metrics`
+  feature.
+
+  Redis saturation metrics (also part of F2) are deferred:
+  `redis::aio::ConnectionManager` exposes no pool / inflight
+  introspection in 0.27.
+
+- **F8 / NATS JetStream init probe** — `NatsProvider::init` now issues
+  a bounded `query_account` call after creating the JetStream
+  `Context`. JetStream-disabled servers used to produce opaque
+  runtime errors on first use; now a precise warn log fires at
+  bootstrap, with a hint about the `--jetstream` flag. The probe is
+  advisory — failure logs but does not abort `init`, since some
+  deployments only use core NATS pub/sub.
+
 ### Not yet addressed (tracked in TODO)
 
-These audit findings remain pending; they are visibility / observability
-improvements rather than correctness gaps:
+The remaining observability work items are scheduled for the next
+batch — they don't affect correctness:
 
-- **F2** — saturation metrics (pool size / inflight / acquire-wait).
 - **F4** — full sqlx pool tuning (`min_connections` / `idle_timeout` /
   `max_lifetime`).
 - **F5** — slow-call warn log per integration.
+- **F2 (cont.)** — saturation metrics for mongo / nats / qdrant /
+  neo4j / s3.
 
 ### Added
 

@@ -19,9 +19,16 @@ hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
 serde.workspace = true
 sqlx = { workspace = true }
 # Used for `tokio::time::timeout` wraps in init/health-check/shutdown
-# to enforce the resilience-config bounds. `time` feature suffices.
-tokio = { workspace = true, features = ["time"] }
+# to enforce the resilience-config bounds. `rt` is needed in the lib
+# (not just `time`) because we spawn the saturation-metrics sampler
+# with `tokio::spawn`.
+tokio = { workspace = true, features = ["time", "rt"] }
 tracing.workspace = true
+# Pool-saturation gauges (`postgres_pool_size` / `postgres_pool_idle`).
+# `metrics` macros are no-ops when no recorder is installed, so the
+# dep is safe regardless of whether the consumer uses the `metrics`
+# feature on the `hwhkit` facade.
+metrics = { workspace = true }
 
 [dev-dependencies]
 # Live integration tests gated by `#[ignore]`. Run with

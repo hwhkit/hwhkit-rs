@@ -167,6 +167,17 @@ impl IntegrationProvider for PostgresProvider {
             run_migrations(&pool, &postgres.migrations.path).await?;
         }
 
+        // Spawn the saturation-metrics sampler. The task holds a clone
+        // of the pool (cheap — sqlx::PgPool is itself an Arc) and
+        // periodically emits `postgres_pool_size` /
+        // `postgres_pool_idle` gauges. When the pool is dropped (during
+        // shutdown / process exit) `PgPool::size()` returns 0 and
+        // tokio shuts the task down with the runtime. We deliberately
+        // don't tie the task to a ShutdownToken here — the `metrics`
+        // macros are no-ops when no recorder is installed, and the
+        // sampler's overhead (~1µs per tick) is negligible.
+        spawn_pool_metrics_sampler(pool.clone());
+
         ctx.insert(PostgresHandle {
             url: postgres.url.clone(),
             max_connections: postgres.max_connections,
@@ -280,6 +291,56 @@ impl HealthCheck for PostgresHealthCheck {
             )),
         }
     }
+}
+
+/// How often the saturation-metrics sampler reads pool stats and emits
+/// gauges. 10 s is a reasonable compromise: dense enough that
+/// Prometheus's 15 s default scrape always sees fresh data, sparse
+/// enough that the sampler itself doesn't show up on flame graphs.
+const SAMPLE_INTERVAL: Duration = Duration::from_secs(10);
+
+/// Spawn the background sampler that emits pool-utilization gauges.
+///
+/// **Emitted gauges** (all labelled with `integration="postgres"`):
+///
+/// - `postgres_pool_size` — total connections owned by the pool right
+///   now (open + idle + in-use). Hits `max_connections` under load;
+///   stays well below it on a quiet service.
+/// - `postgres_pool_idle` — connections sitting in the pool free list.
+///   `pool_size - pool_idle` is the in-use count, which a dashboard
+///   can derive.
+///
+/// The `metrics` macros are no-ops when no recorder is installed (the
+/// `hwhkit` facade's `metrics` feature is what installs one), so this
+/// sampler is harmless even in services that don't enable Prometheus.
+fn spawn_pool_metrics_sampler(pool: PgPool) {
+    tokio::spawn(async move {
+        let mut tick = tokio::time::interval(SAMPLE_INTERVAL);
+        // Skip the immediate first tick — the pool is fresh, stats
+        // would just be zeros. Use `MissedTickBehavior::Delay` so a
+        // slow tokio runtime doesn't burst-fire after a pause.
+        tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        tick.tick().await; // drain the initial immediate tick
+
+        loop {
+            tick.tick().await;
+            // `PgPool::is_closed` lets us shut the sampler down cleanly
+            // when the application drops the pool. Without this, the
+            // task would keep emitting zeros until the tokio runtime
+            // dies — not harmful, but noisy.
+            if pool.is_closed() {
+                tracing::debug!(
+                    integration = KEY,
+                    "postgres pool closed; saturation metrics sampler exiting"
+                );
+                break;
+            }
+            let size = pool.size() as f64;
+            let idle = pool.num_idle() as f64;
+            metrics::gauge!("postgres_pool_size", "integration" => KEY).set(size);
+            metrics::gauge!("postgres_pool_idle", "integration" => KEY).set(idle);
+        }
+    });
 }
 
 #[cfg(test)]

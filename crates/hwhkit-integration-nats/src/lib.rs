@@ -147,6 +147,44 @@ impl IntegrationProvider for NatsProvider {
 
         let jetstream = jetstream::new(client.clone());
 
+        // F8: probe JetStream availability at init time. We always build
+        // a JetStream context (so `NatsHandle::jetstream()` is always
+        // callable), but if the server was started without `--jetstream`
+        // every JS call will fail at runtime with an opaque error. A
+        // bounded `query_account` probe lets us surface that
+        // misconfiguration *now*, at bootstrap, instead of at first use.
+        //
+        // The probe is advisory — failure logs a warning but does not
+        // fail `init`. Reasons:
+        //   - Some deployments only use core NATS pub/sub and intentionally
+        //     don't enable JetStream.
+        //   - JetStream support can be added later without restarting our
+        //     process (the context reconnects automatically).
+        //
+        // If you require JetStream, gate startup on this check at the
+        // application layer using `handle.jetstream().query_account()`.
+        let probe = jetstream.query_account();
+        match tokio::time::timeout(nats_cfg.resilience.op_timeout(), probe).await {
+            Ok(Ok(_)) => {
+                tracing::debug!(integration = KEY, "JetStream available on server");
+            }
+            Ok(Err(err)) => {
+                tracing::warn!(
+                    integration = KEY,
+                    error = %err,
+                    "JetStream probe failed at init; calls via `handle.jetstream()` \
+                     will error at runtime. If you only use core NATS pub/sub this \
+                     is benign; otherwise restart the server with `--jetstream`."
+                );
+            }
+            Err(_) => {
+                tracing::warn!(
+                    integration = KEY,
+                    "JetStream probe exceeded op_timeout_ms — likely unreachable or disabled"
+                );
+            }
+        }
+
         ctx.insert(NatsHandle {
             url: nats_cfg.url.clone(),
             client,
