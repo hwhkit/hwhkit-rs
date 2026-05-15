@@ -6,7 +6,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project (still pre-1.0) uses informal SemVer: minor bumps may
 contain breaking changes until `1.0`.
 
-## Unreleased
+## [0.6.0-alpha.2] — 2026-05-16
 
 ### Added — `hwhkit-integration-oss` (Aliyun OSS, 8th integration)
 
