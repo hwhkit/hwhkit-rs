@@ -8,10 +8,31 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "HwhKit Qdrant integration"
+keywords = ["qdrant", "vector", "embeddings", "search", "async"]
+categories = ["database", "asynchronous"]
+readme = "README.md"
 
 [dependencies]
 async-trait.workspace = true
 hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
 hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+tracing.workspace = true
+tokio = { workspace = true, features = ["time"] }
 serde.workspace = true
 qdrant-client = "1.10"
+
+[dev-dependencies]
+# Live integration tests gated by `#[ignore]`. Qdrant has no dedicated
+# `testcontainers-modules` module, so we drive the `qdrant/qdrant` image
+# directly via `GenericImage`. Run with
+# `cargo test -p hwhkit-integration-qdrant -- --ignored`.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+testcontainers = { workspace = true }
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

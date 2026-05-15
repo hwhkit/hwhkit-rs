@@ -6,6 +6,108 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project (still pre-1.0) uses informal SemVer: minor bumps may
 contain breaking changes until `1.0`.
 
+## Unreleased
+
+### Added — resilience hardening (audit findings F1 / F3 / F6 / F7)
+
+- **`hwhkit_config::ResilienceConfig`** — new shared struct embedded in
+  every integration section under a `resilience` sub-key. Fields:
+  `connect_timeout_ms` (5000 default), `op_timeout_ms` (5000 default),
+  `probe_timeout_ms` (500 default), `shutdown_timeout_ms` (5000 default).
+  All fields `#[serde(default)]`, so existing TOML files keep working
+  without change.
+- **`*Handle::op_timeout() -> Duration`** on every integration handle —
+  user code wraps long-running futures with
+  `tokio::time::timeout(handle.op_timeout(), my_call)` to enforce the
+  configured bound. The integration crate also uses it where the
+  underlying SDK exposes a native timeout (sqlx `acquire_timeout`,
+  aws-sdk-s3 `TimeoutConfig::operation_timeout`).
+
+### Changed — resilience (the actual bug fixes)
+
+- **F1 / `connect_timeout`** — every provider's `init()` now bounds the
+  initial connect handshake. Previously an unreachable backend (typo
+  in URL, partial network outage, …) could stall bootstrap for the
+  SDK default (mongodb 30s, sqlx 30s, …). Now bounded to
+  `connect_timeout_ms`. Unreachable-URL live tests confirm: they return
+  in ~5s where they used to hang.
+- **F1 / `op_timeout`** — provider smoke-tests (`SELECT 1` / `PING` /
+  `admin.ping` / `RETURN 1` / `list_collections` / `flush` /
+  `head_bucket`) are now bounded by `op_timeout_ms`. Where the SDK has
+  native operation timeouts (aws-sdk-s3, qdrant_client) those are also
+  configured from the same value.
+- **F3 / probe isolation** — every `HealthCheck::check()` now wraps its
+  probe in `probe_timeout_ms` (500ms default). A saturated pool or a
+  hung backend can no longer queue the readiness probe behind real
+  traffic; the probe fails fast with a precise message
+  ("probe exceeded probe_timeout_ms = 500") so the readiness endpoint
+  stays responsive under load.
+- **F6 / bounded shutdown** — every provider's `shutdown()` is now
+  bounded by `shutdown_timeout_ms`. Most prominently:
+  `PostgresProvider::shutdown` used to call `PgPool::close().await`
+  with no upper bound — a hung transaction held the entire graceful-
+  shutdown budget. Now bounded to 5s default, with a warn log if the
+  budget is exceeded.
+- **F7 / NATS health probe** — `NatsHealthCheck::check()` no longer
+  trusts `client.connection_state()` (the local cached view). It now
+  issues a real `flush()` roundtrip bounded by `probe_timeout`. A
+  zombie process holding a stale socket previously reported Healthy
+  until the OS killed the FD; now it correctly fails the probe.
+
+### Added — companion infra
+
+- `[dev-dependencies]` `tokio = { ..., features = ["time"] }` to all 7
+  integration crates so `tokio::time::timeout` is available without
+  pulling tokio's full feature surface into the lib crate.
+
+### Not yet addressed (tracked in TODO)
+
+These audit findings remain pending; they are visibility / observability
+improvements rather than correctness gaps:
+
+- **F2** — saturation metrics (pool size / inflight / acquire-wait).
+- **F4** — full sqlx pool tuning (`min_connections` / `idle_timeout` /
+  `max_lifetime`).
+- **F5** — slow-call warn log per integration.
+
+### Added
+
+- `hwhkit::production::server::run_with_listener(built, listener)` — runs a
+  `BuiltApplication` on a pre-bound `TcpListener`. Same OOTB wiring as
+  `run` (health / version / metrics / middleware bundle / request-id /
+  graceful shutdown), but lets callers pick the listener. Unblocks
+  ephemeral-port end-to-end tests, systemd socket activation, and
+  multi-listener deployments.
+- `crates/hwhkit/tests/e2e_serve.rs` — first end-to-end smoke test for
+  the bootstrap → serve → graceful-shutdown pipeline. Asserts that
+  `/health`, `/health/ready`, `/version`, `/info`, `/metrics`, the
+  request-id middleware, and the user-supplied route all work together
+  through a real TCP socket, and that `shutdown.cancel()` drains the
+  server within the configured budget.
+- `doc/2026-05-14-01-integration-resilience-audit.md` — production
+  resilience audit of all 7 integration crates. Identifies seven
+  cross-cutting gaps (op timeout, saturation metrics, isolated health
+  probe, bounded shutdown, slow-call log, pool-leak guard, tunable
+  reconnect) and proposes an additive `resilience` config block.
+- `crates/hwhkit-integration-{postgres,redis,nats}/tests/live.rs` —
+  first live integration tests against real backends via
+  `testcontainers`. Gated `#[ignore]` so default `cargo test` stays
+  hermetic; run with `cargo test -p <crate> -- --ignored`. Each file
+  covers full lifecycle (container → init → handle → health → roundtrip
+  → shutdown) plus the unreachable-URL typed-error contract.
+
+### Changed
+
+- `FileDefaultSource` no longer treats `config/default.toml` as
+  required. A missing file is logged at `debug` and the loader falls
+  back to `AppConfig::default()` for any field the file would have
+  supplied. This fixes the `cargo new` → `cargo run` DX (previously
+  failed with `required config file not found: …/default.toml`) and
+  matches the existing behavior of `FileEnvironmentSource`. Production
+  deployments that *want* to require a config file should add an
+  explicit check at startup; `validate_strict` continues to gate
+  malformed/empty critical fields the same way.
+
 ## [0.6.0-alpha.1] — pre-1.0 API stabilization
 
 ### Removed (breaking)

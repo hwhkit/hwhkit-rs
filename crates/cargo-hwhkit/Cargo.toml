@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "cargo hwhkit init / migrate / dev 命令"
+keywords = ["cargo-subcommand","cli","scaffold","migration"]
+categories = ["development-tools::cargo-plugins"]
+readme = "README.md"
 
 [[bin]]
 name = "cargo-hwhkit"
@@ -24,3 +27,11 @@ tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "si
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

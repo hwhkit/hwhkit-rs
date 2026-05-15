@@ -8,9 +8,20 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "Compile-time build information (git sha, build time, rustc version) for hwhkit services"
+keywords = ["build-info","version","git","metadata"]
+categories = ["development-tools"]
+readme = "README.md"
 
 [dependencies]
 serde.workspace = true
 serde_json.workspace = true
 
 [build-dependencies]
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

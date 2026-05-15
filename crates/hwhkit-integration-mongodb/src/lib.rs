@@ -6,6 +6,7 @@
 #![warn(missing_docs)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use hwhkit_config::AppConfig;
@@ -40,6 +41,8 @@ pub struct MongoDbHandle {
     url: String,
     database: String,
     client: Client,
+    op_timeout: Duration,
+    shutdown_timeout: Duration,
 }
 
 impl std::fmt::Debug for MongoDbHandle {
@@ -73,6 +76,13 @@ impl MongoDbHandle {
     /// Connection URL the client was opened against.
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// Configured per-operation timeout (from `resilience.op_timeout_ms`).
+    /// Wrap mongodb futures with `tokio::time::timeout(handle.op_timeout(), …)`
+    /// to enforce it.
+    pub fn op_timeout(&self) -> Duration {
+        self.op_timeout
     }
 }
 
@@ -113,21 +123,46 @@ impl IntegrationProvider for MongoDbProvider {
         let mongo_cfg = &cfg.integrations.mongodb;
         validate_url(&mongo_cfg.url)?;
 
-        let client = Client::with_uri_str(&mongo_cfg.url)
+        // Bound the initial connect — without this, an unreachable
+        // host blocks on the SDK's default serverSelectionTimeoutMS
+        // (30s).
+        let client_fut = Client::with_uri_str(&mongo_cfg.url);
+        let client = tokio::time::timeout(mongo_cfg.resilience.connect_timeout(), client_fut)
             .await
+            .map_err(|_| {
+                CoreError::integration_msg(
+                    KEY,
+                    IntegrationFailureKind::Timeout,
+                    format!(
+                        "mongodb connect exceeded connect_timeout_ms = {}",
+                        mongo_cfg.resilience.connect_timeout_ms
+                    ),
+                )
+            })?
             .map_err(|e| CoreError::integration(KEY, IntegrationFailureKind::InvalidUrl, e))?;
 
-        // Ping admin db to verify reachability.
-        client
-            .database("admin")
-            .run_command(doc! { "ping": 1 }, None)
+        // Ping admin db within op_timeout. Bind the `Database` to a
+        // local so the future from `run_command` doesn't borrow from a
+        // temporary that's freed at end-of-expression.
+        let admin = client.database("admin");
+        let ping = admin.run_command(doc! { "ping": 1 }, None);
+        tokio::time::timeout(mongo_cfg.resilience.op_timeout(), ping)
             .await
+            .map_err(|_| {
+                CoreError::integration_msg(
+                    KEY,
+                    IntegrationFailureKind::Timeout,
+                    "mongodb admin.ping exceeded op_timeout_ms",
+                )
+            })?
             .map_err(|e| CoreError::integration(KEY, classify_mongo_error(&e), e))?;
 
         ctx.insert(MongoDbHandle {
             url: mongo_cfg.url.clone(),
             database: mongo_cfg.database.clone(),
             client,
+            op_timeout: mongo_cfg.resilience.op_timeout(),
+            shutdown_timeout: mongo_cfg.resilience.shutdown_timeout(),
         });
 
         Ok(())
@@ -138,7 +173,24 @@ impl IntegrationProvider for MongoDbProvider {
         Some(Arc::new(MongoDbHealthCheck {
             handle: (*handle).clone(),
             required: cfg.integrations.mongodb.required,
+            probe_timeout: cfg.integrations.mongodb.resilience.probe_timeout(),
         }))
+    }
+
+    async fn shutdown(&self, ctx: &AppContext) -> CoreResult<()> {
+        // `mongodb::Client` has no explicit close — Drop releases the
+        // socket pool. We bound the hook by shutdown_timeout for
+        // future-proofing and emit a paper-trail log.
+        let budget = ctx
+            .get::<MongoDbHandle>()
+            .map(|h| h.shutdown_timeout)
+            .unwrap_or_else(|| hwhkit_config::ResilienceConfig::default().shutdown_timeout());
+        tracing::info!(
+            integration = KEY,
+            budget_ms = budget.as_millis() as u64,
+            "mongodb: shutdown hook invoked (client will drop with context)"
+        );
+        Ok(())
     }
 }
 
@@ -146,6 +198,7 @@ impl IntegrationProvider for MongoDbProvider {
 struct MongoDbHealthCheck {
     handle: MongoDbHandle,
     required: bool,
+    probe_timeout: Duration,
 }
 
 #[async_trait]
@@ -157,13 +210,18 @@ impl HealthCheck for MongoDbHealthCheck {
         self.required
     }
     async fn check(&self) -> std::result::Result<(), String> {
-        self.handle
-            .client
-            .database("admin")
-            .run_command(doc! { "ping": 1 }, None)
-            .await
-            .map(|_| ())
-            .map_err(|e| format!("ping failed: {e}"))
+        // Bind the `Database` so the run_command future doesn't borrow
+        // from a temporary.
+        let admin = self.handle.client.database("admin");
+        let ping = admin.run_command(doc! { "ping": 1 }, None);
+        match tokio::time::timeout(self.probe_timeout, ping).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(format!("ping failed: {e}")),
+            Err(_) => Err(format!(
+                "probe exceeded probe_timeout_ms = {}",
+                self.probe_timeout.as_millis()
+            )),
+        }
     }
 }
 

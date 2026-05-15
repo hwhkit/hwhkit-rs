@@ -14,6 +14,7 @@ use hwhkit_core::{
 use qdrant_client::Qdrant;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Standalone Qdrant section schema, mirrored from
 /// `hwhkit_config::QdrantIntegrationConfig`.
@@ -36,6 +37,8 @@ pub struct QdrantHandle {
     url: String,
     api_key: Option<String>,
     client: Arc<Qdrant>,
+    op_timeout: Duration,
+    shutdown_timeout: Duration,
 }
 
 impl std::fmt::Debug for QdrantHandle {
@@ -62,6 +65,12 @@ impl QdrantHandle {
     /// not exposed via an accessor.
     pub fn has_api_key(&self) -> bool {
         self.api_key.is_some()
+    }
+
+    /// Configured per-operation timeout (from `resilience.op_timeout_ms`).
+    /// Wrap qdrant RPC futures with `tokio::time::timeout`.
+    pub fn op_timeout(&self) -> Duration {
+        self.op_timeout
     }
 }
 
@@ -108,7 +117,11 @@ impl IntegrationProvider for QdrantProvider {
             Some(qdrant_cfg.api_key.clone())
         };
 
-        let mut builder = Qdrant::from_url(&qdrant_cfg.url);
+        // Bake the connect timeout into the qdrant_client builder so
+        // the underlying gRPC channel honours it natively, then *also*
+        // wrap the smoke-test in a tokio timeout for belt-and-braces.
+        let mut builder =
+            Qdrant::from_url(&qdrant_cfg.url).timeout(qdrant_cfg.resilience.connect_timeout());
         if let Some(key) = api_key.as_ref() {
             builder = builder.api_key(key.clone());
         }
@@ -116,16 +129,25 @@ impl IntegrationProvider for QdrantProvider {
             .build()
             .map_err(|e| CoreError::integration(KEY, IntegrationFailureKind::Misconfigured, e))?;
 
-        // Verify reachability by listing collections.
-        client
-            .list_collections()
+        // Verify reachability by listing collections, bounded by op_timeout.
+        let list = client.list_collections();
+        tokio::time::timeout(qdrant_cfg.resilience.op_timeout(), list)
             .await
+            .map_err(|_| {
+                CoreError::integration_msg(
+                    KEY,
+                    IntegrationFailureKind::Timeout,
+                    "qdrant list_collections exceeded op_timeout_ms",
+                )
+            })?
             .map_err(|e| CoreError::integration(KEY, classify_qdrant_error(&e), e))?;
 
         ctx.insert(QdrantHandle {
             url: qdrant_cfg.url.clone(),
             api_key,
             client: Arc::new(client),
+            op_timeout: qdrant_cfg.resilience.op_timeout(),
+            shutdown_timeout: qdrant_cfg.resilience.shutdown_timeout(),
         });
 
         Ok(())
@@ -136,13 +158,31 @@ impl IntegrationProvider for QdrantProvider {
         Some(Arc::new(QdrantHealthCheck {
             client: handle.client.clone(),
             required: cfg.integrations.vector.qdrant.required,
+            probe_timeout: cfg.integrations.vector.qdrant.resilience.probe_timeout(),
         }))
+    }
+
+    async fn shutdown(&self, ctx: &AppContext) -> CoreResult<()> {
+        // `qdrant_client::Qdrant` has no explicit close. The gRPC
+        // channel is closed when the Arc count drops to zero. Bounded
+        // log for SIGTERM paper-trail symmetry with other providers.
+        let budget = ctx
+            .get::<QdrantHandle>()
+            .map(|h| h.shutdown_timeout)
+            .unwrap_or_else(|| hwhkit_config::ResilienceConfig::default().shutdown_timeout());
+        tracing::info!(
+            integration = KEY,
+            budget_ms = budget.as_millis() as u64,
+            "qdrant: shutdown hook invoked (client will drop with context)"
+        );
+        Ok(())
     }
 }
 
 struct QdrantHealthCheck {
     client: Arc<Qdrant>,
     required: bool,
+    probe_timeout: Duration,
 }
 
 #[async_trait]
@@ -154,11 +194,15 @@ impl HealthCheck for QdrantHealthCheck {
         self.required
     }
     async fn check(&self) -> std::result::Result<(), String> {
-        self.client
-            .list_collections()
-            .await
-            .map(|_| ())
-            .map_err(|e| format!("list_collections failed: {e}"))
+        let list = self.client.list_collections();
+        match tokio::time::timeout(self.probe_timeout, list).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(format!("list_collections failed: {e}")),
+            Err(_) => Err(format!(
+                "probe exceeded probe_timeout_ms = {}",
+                self.probe_timeout.as_millis()
+            )),
+        }
     }
 }
 

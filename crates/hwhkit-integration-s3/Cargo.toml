@@ -8,12 +8,32 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "HwhKit S3-compatible storage integration (AWS S3 / MinIO)"
+keywords = ["s3", "storage", "aws", "minio", "object-storage"]
+categories = ["asynchronous"]
+readme = "README.md"
 
 [dependencies]
 async-trait.workspace = true
 hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
 hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+tracing.workspace = true
+tokio = { workspace = true, features = ["time"] }
 serde.workspace = true
 aws-config = { version = "1.5", features = ["behavior-version-latest"] }
 aws-credential-types = "1.2"
 aws-sdk-s3 = "1.51"
+
+[dev-dependencies]
+# Live integration tests gated by `#[ignore]`. Run with
+# `cargo test -p hwhkit-integration-s3 -- --ignored`.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true, features = ["minio"] }
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

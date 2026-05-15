@@ -14,6 +14,7 @@ use hwhkit_core::{
 use neo4rs::{ConfigBuilder, Graph};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Standalone Neo4j section schema, mirrored from
 /// `hwhkit_config::Neo4jIntegrationConfig`.
@@ -39,6 +40,8 @@ pub struct Neo4jHandle {
     url: String,
     username: String,
     graph: Arc<Graph>,
+    op_timeout: Duration,
+    shutdown_timeout: Duration,
 }
 
 impl std::fmt::Debug for Neo4jHandle {
@@ -65,6 +68,12 @@ impl Neo4jHandle {
     /// not exposed via an accessor.
     pub fn username(&self) -> &str {
         &self.username
+    }
+
+    /// Configured per-operation timeout (from `resilience.op_timeout_ms`).
+    /// Wrap long Cypher queries with `tokio::time::timeout`.
+    pub fn op_timeout(&self) -> Duration {
+        self.op_timeout
     }
 }
 
@@ -123,23 +132,41 @@ impl IntegrationProvider for Neo4jProvider {
             .build()
             .map_err(|e| CoreError::integration(KEY, IntegrationFailureKind::Misconfigured, e))?;
 
-        let graph = Graph::connect(config)
-            .await
-            .map_err(|e| CoreError::integration(KEY, classify_neo4j_error(&e), e))?;
+        // Bound the initial bolt handshake.
+        let graph =
+            tokio::time::timeout(neo4j.resilience.connect_timeout(), Graph::connect(config))
+                .await
+                .map_err(|_| {
+                    CoreError::integration_msg(
+                        KEY,
+                        IntegrationFailureKind::Timeout,
+                        format!(
+                            "neo4j connect exceeded connect_timeout_ms = {}",
+                            neo4j.resilience.connect_timeout_ms
+                        ),
+                    )
+                })?
+                .map_err(|e| CoreError::integration(KEY, classify_neo4j_error(&e), e))?;
 
-        // Live `RETURN 1` ping. `Graph::run` consumes the query and
-        // resolves once Neo4j has acknowledged the statement; if the
-        // server is unreachable or the credentials are wrong we surface
-        // a precise error rather than waiting for the first real query.
-        graph
-            .run(neo4rs::query("RETURN 1"))
+        // Live `RETURN 1` ping bounded by op_timeout.
+        let ping = graph.run(neo4rs::query("RETURN 1"));
+        tokio::time::timeout(neo4j.resilience.op_timeout(), ping)
             .await
+            .map_err(|_| {
+                CoreError::integration_msg(
+                    KEY,
+                    IntegrationFailureKind::Timeout,
+                    "neo4j smoke-test RETURN 1 exceeded op_timeout_ms",
+                )
+            })?
             .map_err(|e| CoreError::integration(KEY, IntegrationFailureKind::AuthFailed, e))?;
 
         ctx.insert(Neo4jHandle {
             url: neo4j.url.clone(),
             username: neo4j.username.clone(),
             graph: Arc::new(graph),
+            op_timeout: neo4j.resilience.op_timeout(),
+            shutdown_timeout: neo4j.resilience.shutdown_timeout(),
         });
 
         Ok(())
@@ -150,13 +177,30 @@ impl IntegrationProvider for Neo4jProvider {
         Some(Arc::new(Neo4jHealthCheck {
             graph: handle.graph.clone(),
             required: cfg.integrations.neo4j.required,
+            probe_timeout: cfg.integrations.neo4j.resilience.probe_timeout(),
         }))
+    }
+
+    async fn shutdown(&self, ctx: &AppContext) -> CoreResult<()> {
+        // `neo4rs::Graph` has no explicit close. Sockets released when
+        // the Arc count drops to zero.
+        let budget = ctx
+            .get::<Neo4jHandle>()
+            .map(|h| h.shutdown_timeout)
+            .unwrap_or_else(|| hwhkit_config::ResilienceConfig::default().shutdown_timeout());
+        tracing::info!(
+            integration = KEY,
+            budget_ms = budget.as_millis() as u64,
+            "neo4j: shutdown hook invoked (graph will drop with context)"
+        );
+        Ok(())
     }
 }
 
 struct Neo4jHealthCheck {
     graph: Arc<Graph>,
     required: bool,
+    probe_timeout: Duration,
 }
 
 #[async_trait]
@@ -168,12 +212,15 @@ impl HealthCheck for Neo4jHealthCheck {
         self.required
     }
     async fn check(&self) -> std::result::Result<(), String> {
-        // neo4rs exposes Graph::run for fire-and-forget queries.
-        self.graph
-            .run(neo4rs::query("RETURN 1"))
-            .await
-            .map(|_| ())
-            .map_err(|e| format!("RETURN 1 failed: {e}"))
+        let ping = self.graph.run(neo4rs::query("RETURN 1"));
+        match tokio::time::timeout(self.probe_timeout, ping).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(format!("RETURN 1 failed: {e}")),
+            Err(_) => Err(format!(
+                "probe exceeded probe_timeout_ms = {}",
+                self.probe_timeout.as_millis()
+            )),
+        }
     }
 }
 

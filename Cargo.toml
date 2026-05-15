@@ -54,3 +54,10 @@ tower-http = { version = "0.5", features = ["catch-panic", "compression-br", "co
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json", "fmt"] }
 uuid = { version = "1", features = ["v4", "v7", "serde"] }
+# Test infrastructure: live integration tests gated behind `#[ignore]`
+# spin up real backends in Docker containers via testcontainers. Kept
+# under workspace deps (not workspace dev-deps — Cargo does not support
+# that) so each integration crate can pull them into its own
+# `[dev-dependencies]` without version drift.
+testcontainers = "0.23"
+testcontainers-modules = "0.11"

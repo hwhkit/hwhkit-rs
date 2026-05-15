@@ -74,9 +74,39 @@ produces no crashing seeds in `fuzz/artifacts/`. Crashes reproduce with
 
 ### Live tests
 
-Tests that need a real Postgres / Redis / NATS / etc. are marked
-`#[ignore]` by default. Run them explicitly with `cargo test -- --ignored`
-once the matching service is up.
+Tests that need a real Postgres / Redis / NATS / etc. live in
+`crates/hwhkit-integration-<name>/tests/live.rs` and are marked
+`#[ignore]` so the default `cargo test` stays hermetic. They use
+[`testcontainers`](https://docs.rs/testcontainers) to spin up the
+backend in a real Docker container — no host services required, but
+**Docker must be running**.
+
+Run them explicitly:
+
+```sh
+# One integration:
+cargo test -p hwhkit-integration-postgres -- --ignored
+cargo test -p hwhkit-integration-redis    -- --ignored
+cargo test -p hwhkit-integration-nats     -- --ignored
+
+# All live tests across the workspace (slow — pulls every image on
+# first run):
+cargo test --workspace -- --ignored
+```
+
+Each `live.rs` covers the same two scenarios for consistency:
+
+1. **Full lifecycle**: container → provider `init` → handle visible
+   in `AppContext` → `health_check` passes → real roundtrip
+   (`SELECT 1` / `SET+GET` / pub-sub) → `shutdown`.
+2. **Unreachable URL**: bind an ephemeral port and drop it (no
+   container), assert `init` surfaces a typed
+   `Error::Integration { kind: ConnectionRefused | Timeout }`.
+
+The file is intentionally `#[ignore]`d rather than feature-gated so
+it still **compiles** on every `cargo build` — that catches the case
+where a public type drift in the integration breaks the test long
+before someone tries to run it.
 
 ## Coverage Expectations
 

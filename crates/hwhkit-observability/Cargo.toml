@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "HwhKit 日志、链路追踪与指标模块 (auto JSON/pretty, OpenTelemetry OTLP, client-side instrumentation for sqlx/redis/reqwest)"
+keywords = ["tracing","logging","metrics","opentelemetry","otel"]
+categories = ["development-tools::debugging"]
+readme = "README.md"
 
 [dependencies]
 async-trait = { workspace = true, optional = true }
@@ -42,3 +45,11 @@ otel = [
 otel-sqlx = ["dep:sqlx", "dep:async-trait"]
 otel-redis = ["dep:redis", "dep:async-trait", "dep:futures"]
 otel-reqwest = ["dep:reqwest", "dep:tower", "dep:http", "dep:futures"]
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -6,11 +6,12 @@
 #![warn(missing_docs)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use aws_config::{BehaviorVersion, Region};
 use aws_credential_types::Credentials;
-use aws_sdk_s3::config::Builder as S3ConfigBuilder;
+use aws_sdk_s3::config::{timeout::TimeoutConfig, Builder as S3ConfigBuilder};
 use aws_sdk_s3::error::SdkError;
 use aws_sdk_s3::operation::head_bucket::HeadBucketError;
 use aws_sdk_s3::Client;
@@ -58,6 +59,8 @@ pub struct S3Handle {
     region: String,
     endpoint: Option<String>,
     client: Client,
+    op_timeout: Duration,
+    shutdown_timeout: Duration,
 }
 
 impl std::fmt::Debug for S3Handle {
@@ -90,6 +93,14 @@ impl S3Handle {
     /// when using the default AWS endpoint resolution.
     pub fn endpoint(&self) -> Option<&str> {
         self.endpoint.as_deref()
+    }
+
+    /// Configured per-operation timeout (from `resilience.op_timeout_ms`).
+    /// The AWS SDK is also configured with the same value via its
+    /// native `TimeoutConfig::operation_timeout` so all SDK calls are
+    /// bounded at the network layer.
+    pub fn op_timeout(&self) -> Duration {
+        self.op_timeout
     }
 }
 
@@ -163,7 +174,16 @@ impl IntegrationProvider for S3Provider {
         }
         let shared_cfg = loader.load().await;
 
-        let mut s3_builder = S3ConfigBuilder::from(&shared_cfg);
+        // Wire native AWS SDK timeouts from the resilience config. The
+        // SDK's `TimeoutConfig` is the right layer to set these —
+        // a wrapping `tokio::time::timeout` would cancel the future but
+        // leak the in-flight TCP connection; the SDK's own timeout
+        // tears down the request properly.
+        let timeouts = TimeoutConfig::builder()
+            .connect_timeout(s3_cfg.resilience.connect_timeout())
+            .operation_timeout(s3_cfg.resilience.op_timeout())
+            .build();
+        let mut s3_builder = S3ConfigBuilder::from(&shared_cfg).timeout_config(timeouts);
         if !s3_cfg.endpoint.is_empty() {
             s3_builder = s3_builder.endpoint_url(s3_cfg.endpoint.clone());
         }
@@ -213,6 +233,8 @@ impl IntegrationProvider for S3Provider {
             region: s3_cfg.region.clone(),
             endpoint,
             client,
+            op_timeout: s3_cfg.resilience.op_timeout(),
+            shutdown_timeout: s3_cfg.resilience.shutdown_timeout(),
         });
 
         Ok(())
@@ -223,7 +245,23 @@ impl IntegrationProvider for S3Provider {
         Some(Arc::new(S3HealthCheck {
             handle: (*handle).clone(),
             required: cfg.integrations.storage.s3.required,
+            probe_timeout: cfg.integrations.storage.s3.resilience.probe_timeout(),
         }))
+    }
+
+    async fn shutdown(&self, ctx: &AppContext) -> CoreResult<()> {
+        // `aws_sdk_s3::Client` has no explicit close. The HTTP
+        // connection pool is dropped with the client.
+        let budget = ctx
+            .get::<S3Handle>()
+            .map(|h| h.shutdown_timeout)
+            .unwrap_or_else(|| hwhkit_config::ResilienceConfig::default().shutdown_timeout());
+        tracing::info!(
+            integration = KEY,
+            budget_ms = budget.as_millis() as u64,
+            "s3: shutdown hook invoked (client will drop with context)"
+        );
+        Ok(())
     }
 }
 
@@ -231,6 +269,7 @@ impl IntegrationProvider for S3Provider {
 struct S3HealthCheck {
     handle: S3Handle,
     required: bool,
+    probe_timeout: Duration,
 }
 
 #[async_trait]
@@ -242,14 +281,22 @@ impl HealthCheck for S3HealthCheck {
         self.required
     }
     async fn check(&self) -> std::result::Result<(), String> {
-        match self
+        let probe = self
             .handle
             .client
             .head_bucket()
             .bucket(&self.handle.bucket)
-            .send()
-            .await
-        {
+            .send();
+        let result = match tokio::time::timeout(self.probe_timeout, probe).await {
+            Ok(r) => r,
+            Err(_) => {
+                return Err(format!(
+                    "probe exceeded probe_timeout_ms = {}",
+                    self.probe_timeout.as_millis()
+                ));
+            }
+        };
+        match result {
             Ok(_) => Ok(()),
             Err(err) => match err {
                 SdkError::ServiceError(svc) => match svc.err() {

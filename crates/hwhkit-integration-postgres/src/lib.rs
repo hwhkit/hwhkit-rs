@@ -9,6 +9,7 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use hwhkit_config::AppConfig;
@@ -41,12 +42,14 @@ pub struct PostgresConfig {
 ///
 /// `PgPool` is itself an `Arc`-backed pool, so cloning the handle is cheap
 /// and safe to share across tasks. Fields are private — use [`Self::pool`],
-/// [`Self::url`], and [`Self::max_connections`].
+/// [`Self::url`], [`Self::max_connections`], and [`Self::op_timeout`].
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub struct PostgresHandle {
     url: String,
     max_connections: u32,
+    op_timeout: Duration,
+    shutdown_timeout: Duration,
     pool: PgPool,
 }
 
@@ -64,6 +67,24 @@ impl PostgresHandle {
     /// `max_connections` value the pool was configured with.
     pub fn max_connections(&self) -> u32 {
         self.max_connections
+    }
+
+    /// Configured per-operation timeout (from `resilience.op_timeout_ms`).
+    ///
+    /// `sqlx` does not expose a global per-statement timeout, so user
+    /// code should wrap long-running queries explicitly:
+    ///
+    /// ```ignore
+    /// let row = tokio::time::timeout(handle.op_timeout(), async {
+    ///     sqlx::query("SELECT ...").fetch_one(handle.pool()).await
+    /// }).await??;
+    /// ```
+    ///
+    /// The integration crate itself uses this duration to size the
+    /// pool's `acquire_timeout`, so queueing for a connection never
+    /// exceeds this bound.
+    pub fn op_timeout(&self) -> Duration {
+        self.op_timeout
     }
 }
 
@@ -104,16 +125,42 @@ impl IntegrationProvider for PostgresProvider {
         let postgres = &cfg.integrations.sql.postgres;
         validate_url(&postgres.url)?;
 
-        let pool = PgPoolOptions::new()
+        // Wire resilience knobs into the pool. `acquire_timeout` is the
+        // pool-acquire bound (sqlx default 30s → too long for an HTTP
+        // service); we tie it to `op_timeout_ms` so a saturated pool
+        // surfaces typed Timeout errors quickly. The initial `connect()`
+        // is bounded by `connect_timeout_ms` via tokio::time::timeout
+        // since `PgPoolOptions::connect_timeout` only covers per-conn
+        // open, not the whole connect-pool-warm-up.
+        let pool_fut = PgPoolOptions::new()
             .max_connections(postgres.max_connections.max(1))
-            .connect(&postgres.url)
+            .acquire_timeout(postgres.resilience.op_timeout())
+            .connect(&postgres.url);
+        let pool = tokio::time::timeout(postgres.resilience.connect_timeout(), pool_fut)
             .await
+            .map_err(|_| {
+                CoreError::integration_msg(
+                    KEY,
+                    IntegrationFailureKind::Timeout,
+                    format!(
+                        "postgres connect exceeded connect_timeout_ms = {}",
+                        postgres.resilience.connect_timeout_ms
+                    ),
+                )
+            })?
             .map_err(|e| CoreError::integration(KEY, classify_sqlx_error(&e), e))?;
 
-        // Smoke test the connection.
-        sqlx::query("SELECT 1")
-            .execute(&pool)
+        // Smoke test the connection — also bounded.
+        let smoke = sqlx::query("SELECT 1").execute(&pool);
+        tokio::time::timeout(postgres.resilience.op_timeout(), smoke)
             .await
+            .map_err(|_| {
+                CoreError::integration_msg(
+                    KEY,
+                    IntegrationFailureKind::Timeout,
+                    "postgres smoke-test SELECT 1 exceeded op_timeout_ms",
+                )
+            })?
             .map_err(|e| CoreError::integration(KEY, classify_sqlx_error(&e), e))?;
 
         if postgres.migrations.run_on_start {
@@ -123,6 +170,8 @@ impl IntegrationProvider for PostgresProvider {
         ctx.insert(PostgresHandle {
             url: postgres.url.clone(),
             max_connections: postgres.max_connections,
+            op_timeout: postgres.resilience.op_timeout(),
+            shutdown_timeout: postgres.resilience.shutdown_timeout(),
             pool,
         });
 
@@ -134,15 +183,26 @@ impl IntegrationProvider for PostgresProvider {
         Some(Arc::new(PostgresHealthCheck {
             handle: PostgresHandle::clone(&handle),
             required: cfg.integrations.sql.postgres.required,
+            probe_timeout: cfg.integrations.sql.postgres.resilience.probe_timeout(),
         }))
     }
 
     async fn shutdown(&self, ctx: &AppContext) -> CoreResult<()> {
         if let Some(handle) = ctx.get::<PostgresHandle>() {
-            // `PgPool::close` waits for inflight queries to settle and
-            // proactively releases sockets, which is friendlier to a
-            // load balancer than dropping references.
-            handle.pool.close().await;
+            // `PgPool::close` waits for inflight queries to settle, but
+            // a hung transaction can hold it forever. Bound it by the
+            // shutdown_timeout configured at init.
+            let budget = handle.shutdown_timeout;
+            if tokio::time::timeout(budget, handle.pool.close())
+                .await
+                .is_err()
+            {
+                tracing::warn!(
+                    integration = KEY,
+                    budget_ms = budget.as_millis() as u64,
+                    "postgres pool shutdown exceeded shutdown_timeout_ms; forcing drop"
+                );
+            }
         }
         Ok(())
     }
@@ -191,6 +251,7 @@ async fn run_migrations(pool: &PgPool, path: &str) -> CoreResult<()> {
 struct PostgresHealthCheck {
     handle: PostgresHandle,
     required: bool,
+    probe_timeout: Duration,
 }
 
 #[async_trait]
@@ -204,11 +265,20 @@ impl HealthCheck for PostgresHealthCheck {
     }
 
     async fn check(&self) -> std::result::Result<(), String> {
-        sqlx::query("SELECT 1")
-            .execute(&self.handle.pool)
-            .await
-            .map_err(|e| format!("SELECT 1 failed: {e}"))
-            .map(|_| ())
+        // Wrap the probe in `probe_timeout` so a saturated pool (no
+        // free connections) can't queue the readiness probe behind
+        // real traffic. Without this, `/health/ready` would block on
+        // `pool.acquire()` for `acquire_timeout` (multiple seconds)
+        // and K8s would mark the pod unhealthy mid-incident.
+        let query = sqlx::query("SELECT 1").execute(&self.handle.pool);
+        match tokio::time::timeout(self.probe_timeout, query).await {
+            Ok(Ok(_)) => Ok(()),
+            Ok(Err(e)) => Err(format!("SELECT 1 failed: {e}")),
+            Err(_) => Err(format!(
+                "probe exceeded probe_timeout_ms = {}",
+                self.probe_timeout.as_millis()
+            )),
+        }
     }
 }
 

@@ -41,9 +41,38 @@ pub enum ServeError {
     Serve(#[source] std::io::Error),
 }
 
-/// Run a [`BuiltApplication`] with the OOTB production runtime. Returns
+/// Run a [`BuiltApplication`] with the OOTB production runtime. Binds
+/// the listener using `server.host`/`server.port` from config. Returns
 /// when the server has fully drained or `max_drain_secs` elapses.
-pub async fn run(mut built: BuiltApplication) -> Result<(), ServeError> {
+pub async fn run(built: BuiltApplication) -> Result<(), ServeError> {
+    let cfg = built.config().clone();
+    let addr: SocketAddr = format!("{}:{}", cfg.server.host, cfg.server.port).parse()?;
+    let listener = TcpListener::bind(addr)
+        .await
+        .map_err(|e| ServeError::Bind { addr, source: e })?;
+    tracing::info!(%addr, "hwhkit server listening");
+    run_with_listener(built, listener).await
+}
+
+/// Run a [`BuiltApplication`] on a pre-bound [`TcpListener`].
+///
+/// This is the lower-level entry point: it mounts the OOTB production
+/// endpoints + middleware bundle, installs SIGINT/SIGTERM handlers, and
+/// serves until shutdown completes — but uses the listener you pass
+/// instead of binding from config.
+///
+/// Useful for:
+///
+/// - **Tests** that need an ephemeral port
+///   (`TcpListener::bind("127.0.0.1:0")`).
+/// - **systemd socket activation** / **inherited fds** where the
+///   listener is owned by the supervisor, not the application.
+/// - **Multi-listener** setups where the caller binds multiple
+///   addresses and decides which one this `BuiltApplication` services.
+pub async fn run_with_listener(
+    mut built: BuiltApplication,
+    listener: TcpListener,
+) -> Result<(), ServeError> {
     let cfg = built.config().clone();
     let mut router = built.router().clone();
 
@@ -103,13 +132,6 @@ pub async fn run(mut built: BuiltApplication) -> Result<(), ServeError> {
     {
         router = middleware::apply(router, &cfg.runtime.middleware);
     }
-
-    let addr: SocketAddr = format!("{}:{}", cfg.server.host, cfg.server.port).parse()?;
-    let listener = TcpListener::bind(addr)
-        .await
-        .map_err(|e| ServeError::Bind { addr, source: e })?;
-
-    tracing::info!(%addr, "hwhkit server listening");
 
     let serve_result = serve(listener, router, &built).await;
 

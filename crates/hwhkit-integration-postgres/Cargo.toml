@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "HwhKit PostgreSQL integration"
+keywords = ["postgres", "postgresql", "database", "sqlx", "async"]
+categories = ["database", "asynchronous"]
+readme = "README.md"
 
 [dependencies]
 async-trait.workspace = true
@@ -15,4 +18,22 @@ hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
 hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
 serde.workspace = true
 sqlx = { workspace = true }
+# Used for `tokio::time::timeout` wraps in init/health-check/shutdown
+# to enforce the resilience-config bounds. `time` feature suffices.
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
+
+[dev-dependencies]
+# Live integration tests gated by `#[ignore]`. Run with
+# `cargo test -p hwhkit-integration-postgres -- --ignored`.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true, features = ["postgres"] }
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -8,10 +8,30 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "HwhKit MongoDB integration"
+keywords = ["mongodb", "mongo", "database", "async"]
+categories = ["database", "asynchronous"]
+readme = "README.md"
 
 [dependencies]
 async-trait.workspace = true
 hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
 hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+tracing.workspace = true
+tokio = { workspace = true, features = ["time"] }
 serde.workspace = true
 mongodb = { version = "2.8", default-features = false, features = ["tokio-runtime"] }
+
+[dev-dependencies]
+# Live integration tests gated by `#[ignore]`. Run with
+# `cargo test -p hwhkit-integration-mongodb -- --ignored`.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+testcontainers = { workspace = true }
+testcontainers-modules = { workspace = true, features = ["mongo"] }
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

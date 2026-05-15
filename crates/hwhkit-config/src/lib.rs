@@ -470,6 +470,78 @@ impl Default for RequestIdConfig {
     }
 }
 
+/// Per-integration resilience knobs.
+///
+/// Every integration section embeds one of these via
+/// `#[serde(default)] resilience: ResilienceConfig`. All defaults are
+/// safe for production — operators tune them only when the workload
+/// has unusual latency expectations or backend SLOs.
+///
+/// **What each field guards against:**
+///
+/// - `connect_timeout_ms` — initial handshake. Prevents bootstrap from
+///   hanging forever on a misconfigured / unreachable backend.
+/// - `op_timeout_ms` — per-operation hint surfaced via
+///   `*Handle::op_timeout()`. **Advisory**: the integration crate wires
+///   it into the underlying SDK's native timeout where one exists
+///   (e.g. `sqlx::PgPoolOptions::acquire_timeout`); user code should
+///   also use it to wrap long-running operations with
+///   `tokio::time::timeout(handle.op_timeout(), my_call)`.
+/// - `probe_timeout_ms` — readiness health-check budget. A probe that
+///   can't answer in this window is reported Down rather than blocking
+///   the `/health/ready` endpoint. Critical for the
+///   pool-saturation case where the probe queues behind real traffic.
+/// - `shutdown_timeout_ms` — caps each provider's `shutdown()` so a
+///   stuck driver (e.g. `PgPool::close` waiting on a hung transaction)
+///   doesn't eat the entire `runtime.shutdown.max_drain_secs` budget.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct ResilienceConfig {
+    /// Initial connect handshake budget. Default: 5_000 ms.
+    pub connect_timeout_ms: u64,
+    /// Per-operation budget hint. Default: 5_000 ms. Surfaced via
+    /// `*Handle::op_timeout()` and used by the integration crate to
+    /// configure SDK-native timeouts where available.
+    pub op_timeout_ms: u64,
+    /// Per-readiness-probe budget. Default: 500 ms. Probes exceeding
+    /// this fail fast so `/health/ready` stays responsive under load.
+    pub probe_timeout_ms: u64,
+    /// Per-provider shutdown budget. Default: 5_000 ms. Bounds
+    /// graceful-shutdown drain so one stuck driver can't block the
+    /// whole process from exiting.
+    pub shutdown_timeout_ms: u64,
+}
+
+impl Default for ResilienceConfig {
+    fn default() -> Self {
+        Self {
+            connect_timeout_ms: 5_000,
+            op_timeout_ms: 5_000,
+            probe_timeout_ms: 500,
+            shutdown_timeout_ms: 5_000,
+        }
+    }
+}
+
+impl ResilienceConfig {
+    /// `connect_timeout_ms` as a `Duration`.
+    pub fn connect_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.connect_timeout_ms)
+    }
+    /// `op_timeout_ms` as a `Duration`.
+    pub fn op_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.op_timeout_ms)
+    }
+    /// `probe_timeout_ms` as a `Duration`.
+    pub fn probe_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.probe_timeout_ms)
+    }
+    /// `shutdown_timeout_ms` as a `Duration`.
+    pub fn shutdown_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.shutdown_timeout_ms)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[non_exhaustive]
 pub struct IntegrationsConfig {
@@ -507,6 +579,8 @@ pub struct S3Config {
     pub access_key_id: String,
     pub secret_access_key: String,
     pub force_path_style: bool,
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
 }
 
 impl Default for S3Config {
@@ -520,6 +594,7 @@ impl Default for S3Config {
             access_key_id: String::new(),
             secret_access_key: String::new(),
             force_path_style: true,
+            resilience: ResilienceConfig::default(),
         }
     }
 }
@@ -540,6 +615,8 @@ pub struct PostgresConfig {
     pub max_connections: u32,
     #[serde(default)]
     pub migrations: PostgresMigrationsConfig,
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
 }
 
 impl Default for PostgresConfig {
@@ -550,6 +627,7 @@ impl Default for PostgresConfig {
             url: String::new(),
             max_connections: 20,
             migrations: PostgresMigrationsConfig::default(),
+            resilience: ResilienceConfig::default(),
         }
     }
 }
@@ -576,6 +654,8 @@ pub struct RedisConfig {
     pub enabled: bool,
     pub required: bool,
     pub url: String,
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
 }
 
 impl Default for RedisConfig {
@@ -584,6 +664,7 @@ impl Default for RedisConfig {
             enabled: false,
             required: false,
             url: String::new(),
+            resilience: ResilienceConfig::default(),
         }
     }
 }
@@ -595,6 +676,8 @@ pub struct MongoDbConfig {
     pub required: bool,
     pub url: String,
     pub database: String,
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
 }
 
 impl Default for MongoDbConfig {
@@ -604,6 +687,7 @@ impl Default for MongoDbConfig {
             required: false,
             url: String::new(),
             database: "app".to_string(),
+            resilience: ResilienceConfig::default(),
         }
     }
 }
@@ -621,6 +705,8 @@ pub struct NatsConfig {
     pub enabled: bool,
     pub required: bool,
     pub url: String,
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
 }
 
 impl Default for NatsConfig {
@@ -629,6 +715,7 @@ impl Default for NatsConfig {
             enabled: false,
             required: false,
             url: String::new(),
+            resilience: ResilienceConfig::default(),
         }
     }
 }
@@ -647,6 +734,8 @@ pub struct QdrantConfig {
     pub required: bool,
     pub url: String,
     pub api_key: String,
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
 }
 
 impl Default for QdrantConfig {
@@ -656,6 +745,7 @@ impl Default for QdrantConfig {
             required: false,
             url: String::new(),
             api_key: String::new(),
+            resilience: ResilienceConfig::default(),
         }
     }
 }
@@ -668,6 +758,8 @@ pub struct Neo4jConfig {
     pub url: String,
     pub username: String,
     pub password: String,
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
 }
 
 impl Default for Neo4jConfig {
@@ -678,6 +770,7 @@ impl Default for Neo4jConfig {
             url: String::new(),
             username: "neo4j".to_string(),
             password: String::new(),
+            resilience: ResilienceConfig::default(),
         }
     }
 }
@@ -763,6 +856,15 @@ pub trait ConfigSource: Send + Sync {
     async fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch>;
 }
 
+/// Layer 1 of the standard load order: `config/default.toml`.
+///
+/// **Optional.** A missing file is not an error — the loader falls back
+/// to [`AppConfig::default`] for any field this source would have
+/// supplied. This matches the DX expectation that `cargo new` →
+/// `cargo run` works without first authoring a config file. To enforce
+/// a baseline config (e.g. in production), require the relevant
+/// fields via your own [`ConfigSource`] or rely on
+/// [`AppConfig::validate_strict`].
 pub struct FileDefaultSource;
 
 #[async_trait]
@@ -772,7 +874,19 @@ impl ConfigSource for FileDefaultSource {
     }
 
     async fn load(&self, bootstrap: &BootstrapConfig) -> Result<ConfigPatch> {
-        read_toml_patch(bootstrap.default_file(), true)
+        let path = bootstrap.default_file();
+        if !path.exists() {
+            // A debug log instead of a warn — running without a default
+            // file is a legitimate, supported mode (especially for tests
+            // and one-shot binaries). `applied_sources` already records
+            // that this source contributed nothing, so the absence is
+            // observable to anyone who needs it.
+            tracing::debug!(
+                path = %path.display(),
+                "default config file not present; using AppConfig::default() for unset fields"
+            );
+        }
+        read_toml_patch(path, false)
     }
 }
 
@@ -1159,6 +1273,38 @@ port = 8081
             .applied_sources
             .iter()
             .any(|source| source == "file:environment"));
+    }
+
+    #[tokio::test]
+    async fn loader_succeeds_when_default_file_is_missing() {
+        // DX contract: `cargo new` → `cargo run` must work without
+        // authoring a config file. The loader returns the validated
+        // `AppConfig::default()` and records that no file-based source
+        // contributed.
+        let dir = TempDir::new().expect("tempdir");
+        let bootstrap = BootstrapConfig::default().with_config_dir(dir.path());
+
+        let loaded = ConfigLoader::default()
+            .load(&bootstrap)
+            .await
+            .expect("missing default.toml must not be a hard error");
+
+        // Pure defaults made it through validation.
+        assert_eq!(loaded.config.server.port, 3000);
+        assert_eq!(loaded.config.server.host, "0.0.0.0");
+
+        // Neither file source contributed (both files absent), so
+        // `applied_sources` does not list them. `env` may or may not
+        // appear depending on the test environment, but the file
+        // entries definitely should not.
+        assert!(
+            !loaded
+                .applied_sources
+                .iter()
+                .any(|s| s == "file:default" || s == "file:environment"),
+            "no file source should be listed when neither file exists: {:?}",
+            loaded.applied_sources
+        );
     }
 
     #[tokio::test]

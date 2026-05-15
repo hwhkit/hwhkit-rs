@@ -7,6 +7,7 @@
 #![warn(missing_docs)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use hwhkit_config::AppConfig;
@@ -39,6 +40,8 @@ pub struct RedisHandle {
     url: String,
     client: redis::Client,
     manager: ConnectionManager,
+    op_timeout: Duration,
+    shutdown_timeout: Duration,
 }
 
 impl std::fmt::Debug for RedisHandle {
@@ -65,6 +68,13 @@ impl RedisHandle {
     /// Connection URL the client was opened against.
     pub fn url(&self) -> &str {
         &self.url
+    }
+
+    /// Configured per-operation timeout (from `resilience.op_timeout_ms`).
+    /// User code should wrap long-running command futures with
+    /// `tokio::time::timeout(handle.op_timeout(), …)`.
+    pub fn op_timeout(&self) -> Duration {
+        self.op_timeout
     }
 }
 
@@ -108,14 +118,41 @@ impl IntegrationProvider for RedisProvider {
         let client = redis::Client::open(redis_cfg.url.as_str())
             .map_err(|e| CoreError::integration(KEY, IntegrationFailureKind::InvalidUrl, e))?;
 
-        let mut manager = ConnectionManager::new(client.clone())
-            .await
-            .map_err(|e| CoreError::integration(KEY, classify_redis_error(&e), e))?;
+        // Bound the initial ConnectionManager handshake. Without this,
+        // an unreachable backend stalls bootstrap on the SDK's default
+        // (multi-second) reconnect schedule.
+        let mut manager = tokio::time::timeout(
+            redis_cfg.resilience.connect_timeout(),
+            ConnectionManager::new(client.clone()),
+        )
+        .await
+        .map_err(|_| {
+            CoreError::integration_msg(
+                KEY,
+                IntegrationFailureKind::Timeout,
+                format!(
+                    "redis connect exceeded connect_timeout_ms = {}",
+                    redis_cfg.resilience.connect_timeout_ms
+                ),
+            )
+        })?
+        .map_err(|e| CoreError::integration(KEY, classify_redis_error(&e), e))?;
 
-        // Ping to verify reachability.
-        let pong: String = redis::cmd("PING")
-            .query_async(&mut manager)
+        // Smoke-test PING within op_timeout. The `Cmd` is bound to a
+        // local so the future returned by `query_async` (which borrows
+        // from it) outlives the temporary that `redis::cmd("PING")`
+        // would otherwise be.
+        let ping_cmd = redis::cmd("PING");
+        let ping = ping_cmd.query_async::<String>(&mut manager);
+        let pong = tokio::time::timeout(redis_cfg.resilience.op_timeout(), ping)
             .await
+            .map_err(|_| {
+                CoreError::integration_msg(
+                    KEY,
+                    IntegrationFailureKind::Timeout,
+                    "redis smoke-test PING exceeded op_timeout_ms",
+                )
+            })?
             .map_err(|e| CoreError::integration(KEY, classify_redis_error(&e), e))?;
 
         if pong.to_uppercase() != "PONG" {
@@ -130,6 +167,8 @@ impl IntegrationProvider for RedisProvider {
             url: redis_cfg.url.clone(),
             client,
             manager,
+            op_timeout: redis_cfg.resilience.op_timeout(),
+            shutdown_timeout: redis_cfg.resilience.shutdown_timeout(),
         });
 
         Ok(())
@@ -140,15 +179,25 @@ impl IntegrationProvider for RedisProvider {
         Some(Arc::new(RedisHealthCheck {
             handle: (*handle).clone(),
             required: cfg.integrations.redis.required,
+            probe_timeout: cfg.integrations.redis.resilience.probe_timeout(),
         }))
     }
 
-    async fn shutdown(&self, _ctx: &AppContext) -> CoreResult<()> {
-        // The redis crate's `ConnectionManager` does not expose an
-        // explicit close. Dropping the references inside `AppContext`
-        // happens automatically when the application is dropped; we
-        // simply log a confirmation here so operators can correlate.
-        tracing::info!("redis: shutdown hook invoked (manager will drop with context)");
+    async fn shutdown(&self, ctx: &AppContext) -> CoreResult<()> {
+        // ConnectionManager has no explicit close in redis 0.27; the
+        // socket is released when the last reference is dropped. We
+        // still bound the hook by shutdown_timeout so a hypothetical
+        // future blocking impl doesn't trap us — and the budget log
+        // gives operators a paper-trail for SIGTERM correlation.
+        let budget = ctx
+            .get::<RedisHandle>()
+            .map(|h| h.shutdown_timeout)
+            .unwrap_or_else(|| hwhkit_config::ResilienceConfig::default().shutdown_timeout());
+        tracing::info!(
+            integration = KEY,
+            budget_ms = budget.as_millis() as u64,
+            "redis: shutdown hook invoked (manager will drop with context)"
+        );
         Ok(())
     }
 }
@@ -163,6 +212,7 @@ impl IntegrationProvider for RedisProvider {
 struct RedisHealthCheck {
     handle: RedisHandle,
     required: bool,
+    probe_timeout: Duration,
 }
 
 #[async_trait]
@@ -175,10 +225,20 @@ impl HealthCheck for RedisHealthCheck {
     }
     async fn check(&self) -> std::result::Result<(), String> {
         let mut conn = self.handle.manager.clone();
-        let pong: String = redis::cmd("PING")
-            .query_async(&mut conn)
-            .await
-            .map_err(|e| format!("PING failed: {e}"))?;
+        // Bind `Cmd` to a local so the future returned by `query_async`
+        // doesn't borrow from a dropped temporary.
+        let ping_cmd = redis::cmd("PING");
+        let ping = ping_cmd.query_async::<String>(&mut conn);
+        let pong = match tokio::time::timeout(self.probe_timeout, ping).await {
+            Ok(Ok(p)) => p,
+            Ok(Err(e)) => return Err(format!("PING failed: {e}")),
+            Err(_) => {
+                return Err(format!(
+                    "probe exceeded probe_timeout_ms = {}",
+                    self.probe_timeout.as_millis()
+                ));
+            }
+        };
         if pong.to_uppercase() != "PONG" {
             return Err(format!("unexpected PING response: {pong}"));
         }

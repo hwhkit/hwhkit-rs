@@ -8,6 +8,9 @@ license.workspace = true
 repository.workspace = true
 homepage.workspace = true
 description = "HwhKit 配置加载、分层合并与校验模块"
+keywords = ["config","toml","configuration","layered"]
+categories = ["config"]
+readme = "README.md"
 
 [dependencies]
 async-trait.workspace = true
@@ -15,8 +18,20 @@ serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
 toml.workspace = true
+# Used solely for a `debug!` message when the optional default config
+# file is absent. Keeping it as a hard dep (instead of an `event!`
+# macro flag dance) keeps the loader code legible.
+tracing.workspace = true
 
 [dev-dependencies]
 tempfile = "3.8"
 tokio = { workspace = true }
 proptest = "1"
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

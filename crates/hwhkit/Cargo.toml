@@ -113,6 +113,12 @@ tower = { workspace = true, features = ["util"] }
 proptest = "1"
 sha2 = "0.10"
 criterion = { version = "0.5", default-features = false, features = ["html_reports"] }
+# Used by tests/e2e_serve.rs to drive a real TCP request against the
+# server spun up by `production::server::run_with_listener`. Pulled in
+# unconditionally (the optional `reqwest` line above is for the JWT /
+# circuit-breaker features, which are opt-in).
+reqwest = { workspace = true }
+async-trait = { workspace = true }
 
 [[bench]]
 name = "middleware_stack"
@@ -129,3 +135,11 @@ required-features = ["metrics"]
 # (cheap; no other code in the crate uses it on other platforms).
 [target.'cfg(target_os = "macos")'.dependencies]
 libc = "0.2"
+
+[package.metadata.docs.rs]
+# Build with every feature flag so the rendered docs include the
+# JWT / multi-tenant / integration / scheduler surfaces, not just the
+# default subset. `--cfg docsrs` lets us gate items like
+# `#[doc(cfg(feature = "..."))]` in source.
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
