@@ -8,6 +8,28 @@ contain breaking changes until `1.0`.
 
 ## Unreleased
 
+### Fixed (cargo-hwhkit template — three independent bugs)
+
+- **Missing `axum` dependency in generated `Cargo.toml`.** The
+  template's `src/app.rs` does `use axum::{routing::get, Router}`,
+  but the `[dependencies]` block did not list `axum`. Every
+  freshly-generated project failed to compile with
+  `unresolved module or unlinked crate 'axum'`. Generated projects
+  now include `axum = "0.7"` (pinned to whatever `hwhkit` itself
+  depends on).
+- **`main.rs` used `run` (bootstrap-only) instead of `run_and_serve`.**
+  `cargo hwhkit init && cargo run` produced a binary that printed
+  four diagnostic lines and exited, which is not what anyone running
+  a quick-start expects. The template now uses `run_and_serve` and
+  the binary actually starts an HTTP server. The advanced
+  `run` + `run_with_listener` path remains one line away for users
+  who need it.
+- **Example route was `/healthz`, which shadows hwhkit's auto-mounted
+  `/health`.** hwhkit's `health-endpoints` feature already mounts
+  `/health` + `/health/ready`; generating a near-duplicate
+  `/healthz` only invited confusion about who owns liveness. The
+  template route is now `GET /` returning a hello message.
+
 ### Fixed
 
 - `cargo hwhkit <subcommand>` no longer fails with

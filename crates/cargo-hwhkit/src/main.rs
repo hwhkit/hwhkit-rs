@@ -384,16 +384,31 @@ fn render_minimal_api(root: &Path, name: &str) -> Result<()> {
 }
 
 fn write_main(root: &Path) -> Result<()> {
+    // `run_and_serve` is the OOTB one-call entry: bootstrap +
+    // auto-mount `/health` / `/metrics` / `/version` / `/info` +
+    // middleware bundle + SIGTERM/SIGINT graceful shutdown.
+    //
+    // Earlier templates used `run` (bootstrap-only — returns a
+    // `BuiltApplication` and the user wires the server themselves),
+    // but that produces a binary that prints a few diagnostic lines
+    // and exits, which is *not* what someone running
+    // `cargo hwhkit init && cargo run` reasonably expects. The
+    // advanced "wire it yourself" path is still one line away —
+    // see `hwhkit::run` and `hwhkit::production::server::run_with_listener`.
     write_file(
         &root.join("src/main.rs"),
-        "mod app;\n\nuse hwhkit::{config::BootstrapConfig, run};\n\n#[tokio::main]\nasync fn main() {\n    let bootstrap = BootstrapConfig::default();\n\n    match run(app::App, bootstrap).await {\n        Ok(built) => {\n            println!(\"bootstrap completed\");\n            println!(\"applied sources: {:?}\", built.applied_sources());\n            println!(\"initialized integrations: {:?}\", built.initialized_integrations());\n            println!(\"degraded integrations: {:?}\", built.degraded_integrations());\n            println!(\"next: wire router/server runtime in app-specific entrypoint\");\n        }\n        Err(err) => {\n            eprintln!(\"bootstrap failed: {err}\");\n            std::process::exit(1);\n        }\n    }\n}\n",
+        "mod app;\n\nuse hwhkit::{config::BootstrapConfig, run_and_serve};\n\n#[tokio::main]\nasync fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {\n    run_and_serve(app::App, BootstrapConfig::default()).await\n}\n",
     )
 }
 
 fn write_standard_app(root: &Path) -> Result<()> {
+    // The example route is `/` rather than `/healthz`. hwhkit
+    // auto-mounts `/health` and `/health/ready` as part of
+    // `run_and_serve`; generating a near-duplicate `/healthz` here
+    // would only confuse newcomers about who owns liveness probes.
     write_file(
         &root.join("src/app.rs"),
-        "use async_trait::async_trait;\nuse axum::{routing::get, Router};\nuse hwhkit::{\n    config::AppConfig,\n    AppContext, Application, Result,\n};\n\npub struct App;\n\n#[async_trait]\nimpl Application for App {\n    async fn build_router(&self, _ctx: AppContext, _cfg: &AppConfig) -> Result<Router> {\n        Ok(Router::new().route(\"/healthz\", get(health)))\n    }\n}\n\nasync fn health() -> &'static str {\n    \"ok\"\n}\n",
+        "use async_trait::async_trait;\nuse axum::{routing::get, Router};\nuse hwhkit::{config::AppConfig, AppContext, Application, Result};\n\npub struct App;\n\n#[async_trait]\nimpl Application for App {\n    /// Implement this to return your service's user-facing router.\n    /// `/health`, `/health/ready`, `/metrics`, `/version`, `/info`,\n    /// the request-id middleware, CORS / compression / timeout, and\n    /// graceful shutdown are mounted *around* this router by hwhkit\n    /// — you don't need to wire any of them by hand.\n    async fn build_router(&self, _ctx: AppContext, _cfg: &AppConfig) -> Result<Router> {\n        Ok(Router::new().route(\"/\", get(hello)))\n    }\n}\n\nasync fn hello() -> &'static str {\n    \"hello from hwhkit\"\n}\n",
     )
 }
 
@@ -419,8 +434,23 @@ fn cargo_toml(name: &str, features: &[&str]) -> String {
     // the moment we shipped 0.4 — `env!` keeps the two in lockstep.
     let hwhkit_version = env!("CARGO_PKG_VERSION");
 
+    // Deps explained:
+    // - `hwhkit`        : the facade crate. Features select integrations.
+    // - `axum`          : `build_router` returns `axum::Router`. hwhkit
+    //                     does NOT re-export `axum::*` (only its own
+    //                     types under `hwhkit::*`), so the generated
+    //                     project needs its own dep on axum.
+    // - `async-trait`   : `impl Application` requires async-trait until
+    //                     stable Rust supports async fns in traits with
+    //                     dyn dispatch.
+    // - `tokio`         : `#[tokio::main]` on the bin entry.
+    //
+    // axum / tokio version pins match what hwhkit itself depends on
+    // (axum 0.7, tokio 1.x). If you bump hwhkit's axum, bump this
+    // template too — `cargo-deny` would otherwise complain about
+    // multiple versions in downstream projects.
     format!(
-        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nasync-trait = \"0.1\"\nhwhkit = {{ version = \"{hwhkit_version}\", features = [{features}] }}\ntokio = {{ version = \"1\", features = [\"full\"] }}\n"
+        "[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\nhwhkit = {{ version = \"{hwhkit_version}\", features = [{features}] }}\naxum = \"0.7\"\nasync-trait = \"0.1\"\ntokio = {{ version = \"1\", features = [\"full\"] }}\n"
     )
 }
 
