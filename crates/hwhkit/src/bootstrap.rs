@@ -78,3 +78,46 @@ pub async fn run_and_serve<A: Application>(
         .await
         .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
 }
+
+/// Like [`run`] but with a caller-supplied [`ConfigLoader`].
+///
+/// Use this when you need to inject custom [`hwhkit_config::ConfigSource`]
+/// implementations — for example, mapping legacy environment variable
+/// names to `AppConfig` fields, or adding a remote config source.
+///
+/// ```ignore
+/// use hwhkit::bootstrap::run_with_loader;
+/// use hwhkit_config::{BootstrapConfig, ConfigLoader};
+///
+/// let loader = ConfigLoader::default().with_source(MyCustomSource);
+/// let built = run_with_loader(MyApp, BootstrapConfig::default(), loader).await?;
+/// ```
+pub async fn run_with_loader<A: Application>(
+    app: A,
+    bootstrap: BootstrapConfig,
+    loader: ConfigLoader,
+) -> Result<BuiltApplication> {
+    bootstrap_with(
+        app,
+        bootstrap,
+        loader,
+        runtime_features(),
+        default_providers(),
+    )
+    .await
+}
+
+/// Like [`run_and_serve`] but with a caller-supplied [`ConfigLoader`].
+///
+/// Combines custom config loading with the full OOTB production runtime
+/// (health endpoints, metrics, middleware bundle, graceful shutdown).
+pub async fn run_and_serve_with_loader<A: Application>(
+    app: A,
+    bootstrap: BootstrapConfig,
+    loader: ConfigLoader,
+) -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let built = run_with_loader(app, bootstrap, loader).await?;
+    crate::production::server::run(built)
+        .await
+        .map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { Box::new(e) })
+}

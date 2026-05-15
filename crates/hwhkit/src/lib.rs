@@ -53,7 +53,7 @@ pub mod production;
 // downstream code can `use hwhkit::*` for the headline types without
 // reaching into the workspace crates. The full surface still lives at
 // `hwhkit::core` for advanced use.
-pub use bootstrap::{run, run_and_serve};
+pub use bootstrap::{run, run_and_serve, run_and_serve_with_loader, run_with_loader};
 pub use hwhkit_core::error::{Error, IntegrationFailureKind};
 pub use hwhkit_core::{
     ApiError, ApiResult, AppContext, Application, BuiltApplication, FieldError, HealthCheck,
