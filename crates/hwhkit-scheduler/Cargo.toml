@@ -16,7 +16,7 @@ readme = "README.md"
 async-trait.workspace = true
 chrono.workspace = true
 futures.workspace = true
-hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+hwhkit-core = { version = "0.6.0-alpha.3", path = "../hwhkit-core" }
 parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -27,7 +27,6 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use axum::async_trait;
 use axum::extract::{FromRef, FromRequestParts};
 use axum::http::request::Parts;
 use axum::http::{header::AUTHORIZATION, StatusCode};
@@ -549,7 +548,6 @@ fn parse_alg(s: &str) -> Option<Algorithm> {
 #[derive(Debug, Clone)]
 pub struct Claims<T>(pub T);
 
-#[async_trait]
 impl<S, T> FromRequestParts<S> for Claims<T>
 where
     S: Send + Sync,
@@ -576,7 +574,6 @@ where
 #[derive(Debug, Clone)]
 pub struct CtxClaims<T>(pub T);
 
-#[async_trait]
 impl<S, T> FromRequestParts<S> for CtxClaims<T>
 where
     S: Send + Sync,

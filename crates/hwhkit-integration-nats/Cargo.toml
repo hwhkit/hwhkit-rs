@@ -14,12 +14,12 @@ readme = "README.md"
 
 [dependencies]
 async-trait.workspace = true
-hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
-hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+hwhkit-config = { version = "0.6.0-alpha.3", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.6.0-alpha.3", path = "../hwhkit-core" }
 tokio = { workspace = true, features = ["time"] }
 serde.workspace = true
 tracing.workspace = true
-async-nats = "0.35"
+async-nats = "0.38"
 
 [dev-dependencies]
 # Live integration tests gated by `#[ignore]`. Run with
