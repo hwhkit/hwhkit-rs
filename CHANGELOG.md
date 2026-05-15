@@ -8,6 +8,17 @@ contain breaking changes until `1.0`.
 
 ## Unreleased
 
+### Fixed
+
+- `cargo hwhkit <subcommand>` no longer fails with
+  `unrecognized subcommand 'hwhkit'`. cargo prepends the subcommand
+  name as the first arg when invoking a `cargo-<name>` binary; the
+  CLI now strips that synthetic arg before passing to clap, so both
+  `cargo hwhkit init demo` and `cargo-hwhkit init demo` work
+  identically. Direct invocation (no `hwhkit` arg) is unchanged.
+  Covered by four unit tests in `cargo-hwhkit/src/main.rs`.
+
+
 ### Added — resilience hardening (audit findings F1 / F3 / F6 / F7)
 
 - **`hwhkit_config::ResilienceConfig`** — new shared struct embedded in

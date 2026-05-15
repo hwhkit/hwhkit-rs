@@ -108,13 +108,38 @@ enum TemplateKind {
 }
 
 fn main() -> Result<()> {
-    let cli = Cli::parse();
+    let cli = Cli::parse_from(cargo_subcommand_argv(std::env::args()));
 
     match cli.command {
         Commands::Init { name, template } => init_project(&name, template),
         Commands::Migrate { action } => run_migrate(action),
         Commands::Dev { action } => run_dev(action),
     }
+}
+
+/// Adjust argv for cargo's subcommand invocation convention.
+///
+/// When the binary is run directly (`cargo-hwhkit init demo` or
+/// `./target/debug/cargo-hwhkit init demo`), argv is what the user
+/// typed: `[<bin>, init, demo]`.
+///
+/// When run *through* cargo (`cargo hwhkit init demo`), cargo prepends
+/// the subcommand name so we see `[<bin>, hwhkit, init, demo]`. Without
+/// stripping that extra arg, clap fails with `unrecognized subcommand
+/// 'hwhkit'` — exactly the error users hit on first try.
+///
+/// We strip a single leading `hwhkit` arg (and *only* `hwhkit`, never a
+/// real subcommand name) so both invocation styles work identically.
+fn cargo_subcommand_argv<I, S>(args: I) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: Into<String>,
+{
+    let mut v: Vec<String> = args.into_iter().map(Into::into).collect();
+    if v.get(1).map(String::as_str) == Some("hwhkit") {
+        v.remove(1);
+    }
+    v
 }
 
 fn run_dev(action: DevAction) -> Result<()> {
@@ -427,5 +452,36 @@ fn write_file(path: &Path, content: &str) -> Result<()> {
 fn template_name(template: TemplateKind) -> &'static str {
     match template {
         TemplateKind::MinimalApi => "minimal-api",
+    }
+}
+
+#[cfg(test)]
+mod argv_tests {
+    use super::cargo_subcommand_argv;
+
+    #[test]
+    fn direct_invocation_unchanged() {
+        let out = cargo_subcommand_argv(["cargo-hwhkit", "init", "demo"]);
+        assert_eq!(out, vec!["cargo-hwhkit", "init", "demo"]);
+    }
+
+    #[test]
+    fn cargo_subcommand_invocation_strips_extra_arg() {
+        let out = cargo_subcommand_argv(["cargo-hwhkit", "hwhkit", "init", "demo"]);
+        assert_eq!(out, vec!["cargo-hwhkit", "init", "demo"]);
+    }
+
+    #[test]
+    fn only_first_hwhkit_stripped() {
+        // If someone names a *project* "hwhkit" (`cargo hwhkit init hwhkit`),
+        // the second occurrence must survive.
+        let out = cargo_subcommand_argv(["cargo-hwhkit", "hwhkit", "init", "hwhkit"]);
+        assert_eq!(out, vec!["cargo-hwhkit", "init", "hwhkit"]);
+    }
+
+    #[test]
+    fn no_args_beyond_binary_unchanged() {
+        let out = cargo_subcommand_argv(["cargo-hwhkit"]);
+        assert_eq!(out, vec!["cargo-hwhkit"]);
     }
 }
