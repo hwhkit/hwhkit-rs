@@ -1,86 +1,75 @@
-# 发布到 crates.io 检查清单
+# Release checklist
 
-## ✅ 已完成的任务
+The release flow is encoded in [`../../Makefile`](../../Makefile) —
+this doc is the human-readable companion that says *when* to run
+which target.
 
-- [x] 项目结构和基本配置
-- [x] 核心功能实现
-- [x] 配置系统和中间件
-- [x] 前后端分离架构支持
-- [x] 前后端不分离架构支持
-- [x] 示例项目和文档
-- [x] 单元测试和集成测试（21个测试通过）
+## Before tagging a release
 
-## 📋 发布前检查清单
+```bash
+make ci             # fmt-check + clippy -D warnings + workspace test + cargo-deny
+make publish-check  # Tier 0 dry-run + Tier 1-3 cargo package --list
+```
 
-### 代码质量
-- [x] 所有测试通过 (`cargo test`)
-- [x] 代码编译无错误 (`cargo check`)
-- [ ] 文档测试通过 (`cargo test --doc`) - 有一个长时间运行的测试
-- [x] 代码格式化 (`cargo fmt`)
-- [ ] Clippy 检查通过 (`cargo clippy`)
+Both must be green. `make ci` is also what CI runs on every PR.
 
-### 文档完整性
-- [x] README.md 文件完整
-- [x] 许可证文件（MIT 和 Apache-2.0）
-- [x] CONTRIBUTING.md 文件
-- [x] 快速开始指南
-- [x] API 文档注释
-- [x] 使用示例
+Optional but recommended:
 
-### Cargo.toml 配置
-- [ ] 更新作者信息
-- [ ] 设置正确的仓库 URL
-- [x] 版本号设置（0.1.0）
-- [x] 描述信息
-- [x] 关键词和分类
-- [x] 许可证信息
-- [x] 依赖项配置
-- [x] 功能特性配置
+```bash
+make test-live      # all 14 #[ignore]'d integration tests (needs docker)
+```
 
-### 示例和测试
-- [x] API 服务器示例
-- [x] 全栈服务器示例
-- [x] 配置文件示例
-- [x] 静态文件和模板示例
-- [x] 集成测试覆盖主要功能
+## Updating versions
 
-### 发布准备
-- [ ] 创建 Git 标签
-- [ ] 运行 `cargo publish --dry-run`
-- [ ] 实际发布 `cargo publish`
+All crates share `workspace.package.version` in the root `Cargo.toml`.
+A version bump is a single-line edit there — no per-crate change
+needed because every member uses `version.workspace = true`.
 
-## 🔧 需要修复的问题
+Pre-1.0 versioning: bump the second segment (`0.X.0`) for any
+breaking change, the third (`0.6.0` → `0.6.1`) for additive /
+bug-fix. SemVer policing happens via `cargo-semver-checks` in the
+`semver.yml` workflow (advisory until 1.0).
 
-1. **作者信息**: 需要更新为真实的作者信息
-2. **仓库 URL**: 需要设置为实际的 GitHub 仓库
-3. **文档测试**: 有一个测试可能会无限运行，需要修复
-4. **Clippy 检查**: 运行 clippy 检查代码质量
+## CHANGELOG
 
-## 📦 发布步骤
+Every PR that touches public API moves an entry from the bottom of
+`CHANGELOG.md` (`## Unreleased`) to a new top section
+`## [<version>] — <date>`. The `## Unreleased` header then starts a
+fresh block. Use Keep-a-Changelog categories
+(Added / Changed / Removed / Fixed / Deprecated).
 
-1. 修复所有问题
-2. 运行完整测试套件
-3. 更新版本号（如果需要）
-4. 运行 `cargo publish --dry-run` 检查
-5. 创建 Git 标签
-6. 运行 `cargo publish` 发布
+## Publishing to crates.io
 
-## 📊 项目统计
+```bash
+cargo login                          # one-time
+git diff --quiet HEAD --             # working tree must be clean
+make publish                         # serial, dep-ordered, 30s index-wait between crates
+```
 
-- **总文件数**: 约 20+ 文件
-- **代码行数**: 约 1500+ 行 Rust 代码
-- **测试数量**: 21 个测试
-- **示例数量**: 2 个完整示例
-- **支持特性**: 4 个可选特性（templates, jwt, testing, full）
+If a single crate fails mid-run:
 
-## 🚀 发布后计划
+```bash
+make publish-resume RESUME_AT=hwhkit-core    # continues after the last successful crate
+```
 
-1. 监控 crates.io 下载量
-2. 收集用户反馈
-3. 修复发现的问题
-4. 计划下一版本功能
-5. 完善文档和示例
+Total runtime: ~7–10 minutes for the full 14-crate workspace.
 
----
+## Post-publish
 
-**注意**: 在实际发布前，确保所有示例都经过测试，文档准确无误，且项目已经推送到公开的 Git 仓库。
+1. `git tag v<version> && git push --tags`.
+2. Create a GitHub release pointing at the matching `CHANGELOG.md`
+   section.
+3. Verify docs.rs builds: visit `https://docs.rs/hwhkit/<version>`
+   within ~30 minutes of publish.
+4. Check the [crates.io page](https://crates.io/crates/hwhkit) shows
+   the README and the correct keyword cluster.
+
+## What this checklist deliberately doesn't track
+
+- Per-feature test coverage targets — the `--all-features` test run is
+  the gate; tracking percentages adds noise without preventing bugs.
+- Documentation completeness — the docs.rs check after publish catches
+  missing `[package.metadata.docs.rs]` config; nothing else needs
+  pre-flight verification.
+- License files — `cargo-deny` (run by `make ci`) enforces our
+  allow-list policy.

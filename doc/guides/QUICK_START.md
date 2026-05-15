@@ -1,301 +1,246 @@
-# HwhKit 快速开始指南
+# HwhKit 快速开始
 
-这个指南将帮助你在 5 分钟内使用 HwhKit 构建你的第一个 Web 服务。
+5 分钟从零到一个生产级 Rust Web 服务。基于 **0.6.0-alpha.1**。
 
-## 🎯 目标
+如果你看到过去版本提到 `WebServerBuilder` / `hwhkit::Config` —— 那是
+v1 API，0.6 已删除。本文档是当前版本的唯一权威入门。
 
-通过这个指南，你将学会：
-- 安装和设置 HwhKit
-- 创建一个基本的 API 服务器
-- 创建一个全栈 Web 应用
-- 使用配置文件管理中间件
+---
 
-## 📦 准备工作
-
-确保你的系统上安装了：
-- Rust 1.70.0 或更高版本
-- Cargo（通常随 Rust 一起安装）
-
-检查版本：
-```bash
-rustc --version
-cargo --version
-```
-
-## 🚀 第一步：创建新项目
+## 1. Hello World（30 秒）
 
 ```bash
-cargo new my-web-app
-cd my-web-app
+cargo new my-service
+cd my-service
 ```
 
-## 📝 第二步：添加依赖
-
-编辑 `Cargo.toml`：
+`Cargo.toml`:
 
 ```toml
 [package]
-name = "my-web-app"
+name = "my-service"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hwhkit = "0.1.0"
-tokio = { version = "1.0", features = ["full"] }
-serde = { version = "1.0", features = ["derive"] }
+hwhkit = "0.6.0-alpha.1"
+axum = "0.7"
+tokio = { version = "1", features = ["full"] }
+async-trait = "0.1"
 ```
 
-## 🔧 第三步：构建 API 服务器
-
-创建 `src/main.rs`：
+`src/main.rs`:
 
 ```rust
-use hwhkit::{WebServerBuilder, get, Json, Serialize, Deserialize};
+use async_trait::async_trait;
+use axum::{routing::get, Router};
+use hwhkit::config::{AppConfig, BootstrapConfig};
+use hwhkit::{run_and_serve, AppContext, Application};
 
-#[derive(Serialize)]
-struct ApiResponse {
-    message: String,
-    timestamp: String,
-}
+/// The only mandatory trait. Return the user-routed `axum::Router`;
+/// hwhkit mounts `/health`, `/metrics`, `/version`, request-id and
+/// graceful shutdown around it OOTB.
+struct MyApp;
 
-#[derive(Deserialize)]
-struct CreateUserRequest {
-    name: String,
-    email: String,
-}
-
-#[derive(Serialize)]
-struct User {
-    id: u64,
-    name: String,
-    email: String,
-}
-
-// 路由处理函数
-async fn hello() -> Json<ApiResponse> {
-    Json(ApiResponse {
-        message: "Hello from HwhKit!".to_string(),
-        timestamp: chrono::Utc::now().to_rfc3339(),
-    })
-}
-
-async fn get_users() -> Json<Vec<User>> {
-    let users = vec![
-        User { id: 1, name: "Alice".to_string(), email: "alice@example.com".to_string() },
-        User { id: 2, name: "Bob".to_string(), email: "bob@example.com".to_string() },
-    ];
-    Json(users)
-}
-
-async fn create_user(Json(request): Json<CreateUserRequest>) -> Json<User> {
-    // 在实际应用中，这里会保存到数据库
-    let user = User {
-        id: 3, // 模拟生成的 ID
-        name: request.name,
-        email: request.email,
-    };
-    Json(user)
+#[async_trait]
+impl Application for MyApp {
+    async fn build_router(
+        &self,
+        _ctx: AppContext,
+        _cfg: &AppConfig,
+    ) -> hwhkit::Result<Router> {
+        Ok(Router::new().route("/", get(|| async { "hello from hwhkit" })))
+    }
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 构建路由
-    let app = hwhkit::Router::new()
-        .route("/", get(hello))
-        .route("/users", get(get_users).post(create_user));
-
-    // 创建服务器
-    let server = WebServerBuilder::new()
-        .listen("0.0.0.0", 3000)
-        .cors(vec!["*".to_string()]) // 允许所有来源（开发环境）
-        .routes(app)
-        .build()
-        .await?;
-
-    println!("🚀 服务器启动在 http://localhost:3000");
-    println!("📖 API 端点:");
-    println!("  GET  /       - 欢迎消息");
-    println!("  GET  /users  - 获取用户列表");
-    println!("  POST /users  - 创建新用户");
-
-    server.serve().await?;
-    Ok(())
+async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    run_and_serve(MyApp, BootstrapConfig::default()).await
 }
 ```
 
-## ⚡ 第四步：运行服务器
+`cargo run` → 启动在 `0.0.0.0:3000`。**不需要写 config 文件** —— 0.6
+之后 `config/default.toml` 是可选的，缺省值适用于本地开发。
+
+试试：
 
 ```bash
-cargo run
+curl localhost:3000/              # → hello from hwhkit
+curl localhost:3000/health        # → {"status":"ok"}
+curl localhost:3000/health/ready  # → {"status":"up","degraded":false,...}
+curl localhost:3000/metrics       # → Prometheus 文本
+curl localhost:3000/version       # → 构建信息
+curl localhost:3000/info          # → 服务名 / 环境 / 已初始化集成
 ```
 
-访问你的 API：
+`/health` `/metrics` `/version` `/info`、request-id 中间件、CORS、压缩、panic→problem+json、SIGTERM graceful shutdown 全部 **默认开启**。这就是 hwhkit 帮你免费拿到的东西。
 
-```bash
-# 获取欢迎消息
-curl http://localhost:3000/
+---
 
-# 获取用户列表
-curl http://localhost:3000/users
+## 2. 配置文件（什么时候需要）
 
-# 创建新用户
-curl -X POST http://localhost:3000/users \
-  -H "Content-Type: application/json" \
-  -d '{"name": "Charlie", "email": "charlie@example.com"}'
-```
-
-## 🏗️ 第五步：使用配置文件
-
-创建 `config.toml`：
+不需要时 hwhkit 用 `AppConfig::default()`（host=`0.0.0.0`, port=3000,
+service_name="hwhkit-service"）。改这些字段就建一个 `config/default.toml`：
 
 ```toml
 [server]
 host = "0.0.0.0"
-port = 3000
-architecture = "api"
+port = 8080
 
-[middleware.cors]
-enabled = true
-origins = ["http://localhost:3000", "https://yourdomain.com"]
-methods = ["GET", "POST", "PUT", "DELETE"]
-headers = ["Content-Type", "Authorization"]
-
-[middleware.jwt]
-enabled = false  # 暂时禁用，后面可以启用
-secret = "your-super-secure-secret"
-expires_in = 3600
-
-[middleware.static_files]
-enabled = true
-dir = "public"
-prefix = "/static"
-
-[middleware.logging]
-level = "info"
-requests = true
-
-[middleware.custom]
-app_name = "My Web App"
-version = "1.0.0"
+[observability]
+service_name = "my-service"
+environment = "dev"
 ```
 
-更新 `src/main.rs` 使用配置文件：
+环境覆盖：`config/{dev,test,prod}.toml`，根据 `HWHKIT__ENVIRONMENT`
+环境变量或 `BootstrapConfig::with_environment()` 选择。
 
-```rust
-use hwhkit::{WebServerBuilder, get, post, Json, Serialize, Deserialize};
-
-// ... 保持之前的结构体定义 ...
-
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // 构建路由
-    let app = hwhkit::Router::new()
-        .route("/", get(hello))
-        .route("/users", get(get_users).post(create_user));
-
-    // 使用配置文件创建服务器
-    let server = WebServerBuilder::new()
-        .config_from_file("config.toml")  // 从配置文件加载
-        .routes(app)
-        .build()
-        .await?;
-
-    println!("🚀 服务器启动成功！");
-    server.serve().await?;
-    Ok(())
-}
-```
-
-## 🎨 第六步：添加静态文件（可选）
-
-创建 `public` 目录和一个简单的 HTML 文件：
-
-```bash
-mkdir public
-```
-
-创建 `public/index.html`：
-
-```html
-<!DOCTYPE html>
-<html>
-<head>
-    <title>My Web App</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .container { max-width: 600px; margin: 0 auto; }
-        .btn { background: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>欢迎使用 HwhKit!</h1>
-        <p>你的 Web 服务器正在运行中。</p>
-        
-        <h2>API 测试</h2>
-        <button class="btn" onclick="testApi()">测试 API</button>
-        <div id="result"></div>
-        
-        <script>
-            async function testApi() {
-                try {
-                    const response = await fetch('/users');
-                    const users = await response.json();
-                    document.getElementById('result').innerHTML = 
-                        '<h3>用户列表:</h3><pre>' + JSON.stringify(users, null, 2) + '</pre>';
-                } catch (error) {
-                    document.getElementById('result').innerHTML = 
-                        '<p style="color: red;">错误: ' + error.message + '</p>';
-                }
-            }
-        </script>
-    </div>
-</body>
-</html>
-```
-
-现在你可以访问 `http://localhost:3000/static/index.html` 查看前端页面！
-
-## 🌟 下一步
-
-恭喜！你已经成功创建了第一个 HwhKit 应用。接下来你可以：
-
-1. **探索更多功能**：
-   - 启用 JWT 认证
-   - 添加数据库集成
-   - 使用模板引擎
-
-2. **查看示例**：
-   ```bash
-   git clone https://github.com/yourusername/hwhkit.git
-   cd hwhkit
-   cargo run --example api-server
-   cargo run --example full-server
-   ```
-
-3. **阅读完整文档**：
-   - [README.md](README.md)
-   - [API 文档](https://docs.rs/hwhkit)
-
-4. **加入社区**：
-   - [GitHub Issues](https://github.com/yourusername/hwhkit/issues)
-   - [Discussions](https://github.com/yourusername/hwhkit/discussions)
-
-## 💡 常见问题
-
-**Q: 如何启用 HTTPS？**
-A: HwhKit 专注于应用层，建议在生产环境中使用反向代理（如 Nginx）来处理 HTTPS。
-
-**Q: 如何添加数据库？**
-A: HwhKit 与数据库无关，你可以使用任何 Rust 数据库库（如 sqlx、diesel 等）。
-
-**Q: 如何部署到生产环境？**
-A: 编译你的应用（`cargo build --release`），然后将二进制文件和配置文件部署到服务器。
-
-## 🎉 完成！
-
-你现在已经掌握了 HwhKit 的基础用法。开始构建你的下一个伟大的 Web 应用吧！
+环境变量覆盖：`HWHKIT__SERVER__PORT=9000` 覆盖 `server.port`（双下划线
+= 嵌套分隔符）。
 
 ---
 
-如果遇到问题，请查看 [故障排除指南](README.md#troubleshooting) 或 [提交 Issue](https://github.com/yourusername/hwhkit/issues)。
+## 3. 加 Postgres（2 分钟）
+
+打开 `postgres` feature：
+
+```toml
+[dependencies]
+hwhkit = { version = "0.6.0-alpha.1", features = ["postgres"] }
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
+```
+
+`config/default.toml`：
+
+```toml
+[integrations.sql.postgres]
+enabled = true
+required = true                  # bootstrap 失败时 panic
+url = "postgres://user:pw@localhost:5432/mydb"
+max_connections = 20
+
+# 可选 —— 任意未列字段都用安全默认（5s/500ms/5s）
+[integrations.sql.postgres.resilience]
+connect_timeout_ms = 5000
+op_timeout_ms      = 5000
+probe_timeout_ms   = 500
+shutdown_timeout_ms = 5000
+```
+
+handler 里拿 pool：
+
+```rust
+use hwhkit::postgres::PostgresHandle;
+
+async fn build_router(
+    &self,
+    ctx: AppContext,
+    _cfg: &AppConfig,
+) -> hwhkit::Result<Router> {
+    let pg = ctx.get::<PostgresHandle>().expect("postgres enabled");
+    let pool = pg.pool().clone();
+
+    Ok(Router::new()
+        .route("/db/now", get(move || {
+            let pool = pool.clone();
+            async move {
+                let (now,): (String,) = sqlx::query_as("SELECT now()::text")
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+                now
+            }
+        })))
+}
+```
+
+**就这么简单**。bootstrap 期间 `PostgresProvider` 已经：
+- 用 `connect_timeout` 做 bounded 连接
+- 运行 `SELECT 1` 冒烟测试
+- 把 `PostgresHandle` 注入 `AppContext`
+- 注册 readiness probe，并发挂到 `/health/ready`
+- 注册 graceful shutdown hook（`shutdown_timeout` 内 `PgPool::close()`）
+- 后台 spawn metrics sampler，每 10s 发 `postgres_pool_size` / `postgres_pool_idle` gauge
+
+---
+
+## 4. 集成清单
+
+每个集成是一个 feature flag + 一个 config section + 从 `AppContext` 拿
+出来的 Handle 类型。
+
+| Feature | Config section | Handle 类型 |
+|---|---|---|
+| `postgres` | `[integrations.sql.postgres]` | `hwhkit::postgres::PostgresHandle` |
+| `redis` | `[integrations.redis]` | `hwhkit::redis::RedisHandle` |
+| `mongodb` | `[integrations.mongodb]` | `hwhkit::mongodb::MongoDbHandle` |
+| `nats` | `[integrations.messaging.nats]` | `hwhkit::nats::NatsHandle` |
+| `qdrant` | `[integrations.vector.qdrant]` | `hwhkit::qdrant::QdrantHandle` |
+| `neo4j` | `[integrations.neo4j]` | `hwhkit::neo4j::Neo4jHandle` |
+| `s3` | `[integrations.storage.s3]` | `hwhkit::s3::S3Handle` |
+
+所有 Handle 都有：
+- 内部 SDK 客户端的 accessor（`pool()` / `client()` / `manager()` …）
+- `op_timeout() -> Duration` —— 你应该用它包裹长查询：
+  ```rust
+  tokio::time::timeout(handle.op_timeout(), my_query).await??
+  ```
+
+---
+
+## 5. 生产能力（feature 一开就有）
+
+| Feature | 提供什么 |
+|---|---|
+| `jwt` | JWKS 自动拉取 + axum 提取器 `Claims<T>` |
+| `rate-limit` | Redis token-bucket 限流（需 `redis`） |
+| `idempotency` | `Idempotency-Key` 头幂等性（需 `redis`） |
+| `circuit-breaker` | 出站 HTTP 熔断器（reqwest） |
+| `scheduler` | 持久化 cron + one-shot 调度器（PG-backed） |
+| `multi-tenant` | `TenantId` / `TenantScope` 原语（默认开） |
+| `otel` | OpenTelemetry OTLP 导出 |
+| `otel-sqlx` / `otel-redis` / `otel-reqwest` | 跨边界 trace 透传 |
+
+`full` feature 一次性开所有 integration + 所有 Tier-2 能力，适合
+"我先把架子搭起来再裁" 的场景。
+
+---
+
+## 6. 高级入口（你需要更精细控制时）
+
+- `hwhkit::run(app, bootstrap)` —— 只 bootstrap，返回 `BuiltApplication`。
+  你自己驱动 axum serve（多 listener / HTTPS / 自定义 shutdown 顺序）。
+- `hwhkit::production::server::run_with_listener(built, listener)` ——
+  接管一个预绑定的 `TcpListener`。这是 e2e 测试 + systemd socket
+  activation 的入口。
+
+---
+
+## 7. 在哪查更多
+
+| 想看什么 | 去哪 |
+|---|---|
+| 完整 examples | `examples/` 目录 —— `minimal`、`postgres-rest`、`full-stack` |
+| 配置 schema 字段说明 | `hwhkit_config::AppConfig` 的 rustdoc |
+| 中间件 / 生产端点细节 | `hwhkit::production::*` 的 rustdoc |
+| 集成韧性设计 | `doc/2026-05-14-01-integration-resilience-audit.md` |
+| live 测试怎么跑 | `TESTING.md` |
+| 发布工具 | `Makefile` 的 `make help` |
+
+---
+
+## 8. 常见坑
+
+- **`failed to load configuration`** —— 0.6 之前 `default.toml` 是必需的，
+  现在可选。如果你在 0.5 → 0.6 升级时撞到这个错，删掉旧的报错代码即可。
+- **`integration ... is required but missing url`** —— 你打开了 feature
+  并把 `required = true`，但 url 是空。要么填 url，要么 `required = false`。
+- **handler 拿不到 `PostgresHandle`** —— `ctx.get::<PostgresHandle>()`
+  返回 `Option<Arc<T>>`。返回 `None` 几乎只可能是该 feature 没开，或
+  `enabled = false`。检查 `BuiltApplication::initialized_integrations()`
+  确认它确实初始化了。
+- **`/health/ready` 一直 503** —— 看 response body 里的 `checks` 数组，
+  每个 integration 报错信息都在 `message` 字段。
+- **graceful shutdown 跑超时** —— 默认 30s drain budget，由
+  `runtime.shutdown.max_drain_secs` 控制。每个 integration 的 shutdown
+  又被 `resilience.shutdown_timeout_ms` (默认 5s) 单独限。
