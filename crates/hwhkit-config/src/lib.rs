@@ -231,6 +231,37 @@ impl AppConfig {
                 ));
             }
         }
+        if self.integrations.storage.oss.enabled {
+            if self.integrations.storage.oss.endpoint.trim().is_empty() {
+                return Err(Error::Validation(
+                    "integrations.storage.oss.endpoint cannot be empty when enabled".to_string(),
+                ));
+            }
+            if self.integrations.storage.oss.bucket.trim().is_empty() {
+                return Err(Error::Validation(
+                    "integrations.storage.oss.bucket cannot be empty when enabled".to_string(),
+                ));
+            }
+            if self
+                .integrations
+                .storage
+                .oss
+                .access_key_id
+                .trim()
+                .is_empty()
+                || self
+                    .integrations
+                    .storage
+                    .oss
+                    .access_key_secret
+                    .trim()
+                    .is_empty()
+            {
+                return Err(Error::Validation(
+                    "integrations.storage.oss credentials cannot be empty when enabled".to_string(),
+                ));
+            }
+        }
         Ok(())
     }
 }
@@ -566,6 +597,35 @@ pub struct IntegrationsConfig {
 pub struct StorageConfig {
     #[serde(default)]
     pub s3: S3Config,
+    #[serde(default)]
+    pub oss: OssConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct OssConfig {
+    pub enabled: bool,
+    pub required: bool,
+    pub endpoint: String,
+    pub bucket: String,
+    pub access_key_id: String,
+    pub access_key_secret: String,
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
+}
+
+impl Default for OssConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            required: false,
+            endpoint: String::new(),
+            bucket: String::new(),
+            access_key_id: String::new(),
+            access_key_secret: String::new(),
+            resilience: ResilienceConfig::default(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

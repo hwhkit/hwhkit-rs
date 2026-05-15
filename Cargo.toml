@@ -12,6 +12,7 @@ members = [
     "crates/hwhkit-integration-qdrant",
     "crates/hwhkit-integration-neo4j",
     "crates/hwhkit-integration-s3",
+    "crates/hwhkit-integration-oss",
     "crates/hwhkit-scheduler",
     "crates/cargo-hwhkit",
     # Worked examples — see `examples/README.md`.

@@ -40,7 +40,8 @@ TIER_2 := hwhkit-scheduler \
           hwhkit-integration-nats \
           hwhkit-integration-qdrant \
           hwhkit-integration-neo4j \
-          hwhkit-integration-s3
+          hwhkit-integration-s3 \
+          hwhkit-integration-oss
 # Tier 3 — facade crate, pulls in everything via feature flags:
 TIER_3 := hwhkit
 

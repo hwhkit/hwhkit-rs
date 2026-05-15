@@ -76,6 +76,8 @@ pub use hwhkit_integration_mongodb as mongodb;
 pub use hwhkit_integration_nats as nats;
 #[cfg(feature = "neo4j")]
 pub use hwhkit_integration_neo4j as neo4j;
+#[cfg(feature = "oss")]
+pub use hwhkit_integration_oss as oss;
 #[cfg(feature = "postgres")]
 pub use hwhkit_integration_postgres as postgres;
 #[cfg(feature = "qdrant")]

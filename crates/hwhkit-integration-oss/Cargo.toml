@@ -1,0 +1,46 @@
+[package]
+name = "hwhkit-integration-oss"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HwhKit Aliyun OSS (Object Storage Service) integration"
+keywords = ["aliyun", "oss", "object-storage", "alibaba", "cloud"]
+categories = ["api-bindings", "asynchronous"]
+readme = "README.md"
+
+[dependencies]
+async-trait.workspace = true
+hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
+serde.workspace = true
+# `time` for `tokio::time::timeout` in init/health-check/shutdown.
+tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
+# `aliyun-oss-client` is the most-adopted community OSS SDK on
+# crates.io (90k+ downloads as of 2026-05). The official Aliyun
+# SDK (`alibabacloud-oss-sdk-rust-v2`) is still in 0.1.0-delta and
+# not production-ready; we'll migrate when it stabilises. The
+# wrapper pattern means SDK swaps only touch this crate.
+# `tokio` feature = async client (vs blocking); `rustls-tls` matches
+# hwhkit's rustls-everywhere TLS policy (avoids dragging in native
+# openssl). Defaults would pull `default-tls` (native openssl) which
+# clashes with the rest of the workspace.
+aliyun-oss-client = { version = "0.13", default-features = false, features = ["tokio", "rustls-tls"] }
+
+[dev-dependencies]
+# Live tests for OSS are gated `#[ignore]` like every other
+# integration. Aliyun does NOT ship a local emulator (unlike MinIO
+# for S3 or RedisInsight for Redis), so the live tests use
+# `mockito` to stub the HTTP API and verify the SDK request shape
+# + our integration's response handling. Run with
+# `cargo test -p hwhkit-integration-oss -- --ignored`.
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+mockito = "1.5"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

@@ -58,6 +58,7 @@ hwhkit-integration-nats = { version = "0.6.0-alpha.1", path = "../hwhkit-integra
 hwhkit-integration-qdrant = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-qdrant", optional = true }
 hwhkit-integration-neo4j = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-neo4j", optional = true }
 hwhkit-integration-s3 = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-s3", optional = true }
+hwhkit-integration-oss = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-oss", optional = true }
 hwhkit-scheduler = { version = "0.6.0-alpha.1", path = "../hwhkit-scheduler", optional = true }
 
 [features]
@@ -79,6 +80,7 @@ nats = ["dep:hwhkit-integration-nats"]
 qdrant = ["dep:hwhkit-integration-qdrant"]
 neo4j = ["dep:hwhkit-integration-neo4j"]
 s3 = ["dep:hwhkit-integration-s3"]
+oss = ["dep:hwhkit-integration-oss"]
 
 # Tier 1 production defaults, each individually opt-out-able:
 health-endpoints = []
@@ -102,7 +104,7 @@ idempotency = ["redis", "dep:redis-client", "dep:sha2", "dep:base64"]
 circuit-breaker = ["dep:reqwest"]
 scheduler = ["dep:hwhkit-scheduler"]
 
-full = ["jwt", "postgres", "redis", "mongodb", "nats", "qdrant", "neo4j", "s3", "health-endpoints", "metrics", "process-metrics", "version-endpoints", "middleware-bundle", "graceful-shutdown", "request-id", "multi-tenant", "otel", "otel-sqlx", "otel-redis", "otel-reqwest", "migrations", "rate-limit", "idempotency", "circuit-breaker", "scheduler"]
+full = ["jwt", "postgres", "redis", "mongodb", "nats", "qdrant", "neo4j", "s3", "oss", "health-endpoints", "metrics", "process-metrics", "version-endpoints", "middleware-bundle", "graceful-shutdown", "request-id", "multi-tenant", "otel", "otel-sqlx", "otel-redis", "otel-reqwest", "migrations", "rate-limit", "idempotency", "circuit-breaker", "scheduler"]
 
 [dev-dependencies]
 tempfile = "3.8"

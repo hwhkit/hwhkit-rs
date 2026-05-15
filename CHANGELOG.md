@@ -8,6 +8,28 @@ contain breaking changes until `1.0`.
 
 ## Unreleased
 
+### Added — `hwhkit-integration-oss` (Aliyun OSS, 8th integration)
+
+- New workspace crate wrapping `aliyun-oss-client` (community SDK,
+  90k+ downloads). Same lifecycle shape as the other 7 integrations:
+  bounded init / probe / shutdown, `OssHandle::op_timeout()` accessor,
+  XML bucket-info smoke test, error classification covering
+  `Reqwest` / `InvalidEndPoint` / `Service(...)` variants.
+- Facade `oss` feature flag; re-exported as `hwhkit::oss`.
+- New `[integrations.storage.oss]` config section + `OssConfig` schema
+  (endpoint / bucket / access_key_id / access_key_secret +
+  resilience block). `validate_strict` checks the three required
+  fields when enabled.
+- Live tests (`#[ignore]`d): `mockito`-backed full-lifecycle test
+  (no docker emulator exists for OSS) + unreachable-endpoint
+  typed-error contract.
+- Added to `known_features()`, `runtime_features()`, `default_providers()`,
+  facade `full` feature, and Makefile publish order.
+- Why a separate crate (not extending `hwhkit-integration-s3`):
+  S3-compat mode covers ~80% of OSS use but hides OSS-specific
+  features (lifecycle, image processing, callback signatures). A
+  native wrapper gives full feature parity and isolates SDK choice.
+
 ### Fixed (cargo-hwhkit template — three independent bugs)
 
 - **Missing `axum` dependency in generated `Cargo.toml`.** The

@@ -148,7 +148,7 @@ pub struct RuntimeFeatures {
 /// us evolve the storage without a breaking change. (N9.)
 pub fn known_features() -> impl Iterator<Item = &'static str> {
     [
-        "postgres", "redis", "mongodb", "nats", "qdrant", "neo4j", "s3",
+        "postgres", "redis", "mongodb", "nats", "qdrant", "neo4j", "s3", "oss",
     ]
     .into_iter()
 }
