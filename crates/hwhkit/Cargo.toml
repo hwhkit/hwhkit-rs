@@ -47,19 +47,19 @@ sha2 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
 itoa = "1"
 
-hwhkit-buildinfo = { version = "0.6.0-alpha.1", path = "../hwhkit-buildinfo" }
-hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
-hwhkit-core = { version = "0.6.0-alpha.1", path = "../hwhkit-core" }
-hwhkit-observability = { version = "0.6.0-alpha.1", path = "../hwhkit-observability" }
-hwhkit-integration-postgres = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-postgres", optional = true }
-hwhkit-integration-redis = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-redis", optional = true }
-hwhkit-integration-mongodb = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-mongodb", optional = true }
-hwhkit-integration-nats = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-nats", optional = true }
-hwhkit-integration-qdrant = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-qdrant", optional = true }
-hwhkit-integration-neo4j = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-neo4j", optional = true }
-hwhkit-integration-s3 = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-s3", optional = true }
-hwhkit-integration-oss = { version = "0.6.0-alpha.1", path = "../hwhkit-integration-oss", optional = true }
-hwhkit-scheduler = { version = "0.6.0-alpha.1", path = "../hwhkit-scheduler", optional = true }
+hwhkit-buildinfo = { version = "0.6.0-alpha.3", path = "../hwhkit-buildinfo" }
+hwhkit-config = { version = "0.6.0-alpha.3", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.6.0-alpha.3", path = "../hwhkit-core" }
+hwhkit-observability = { version = "0.6.0-alpha.3", path = "../hwhkit-observability" }
+hwhkit-integration-postgres = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-postgres", optional = true }
+hwhkit-integration-redis = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-redis", optional = true }
+hwhkit-integration-mongodb = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-mongodb", optional = true }
+hwhkit-integration-nats = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-nats", optional = true }
+hwhkit-integration-qdrant = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-qdrant", optional = true }
+hwhkit-integration-neo4j = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-neo4j", optional = true }
+hwhkit-integration-s3 = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-s3", optional = true }
+hwhkit-integration-oss = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-oss", optional = true }
+hwhkit-scheduler = { version = "0.6.0-alpha.3", path = "../hwhkit-scheduler", optional = true }
 
 [features]
 # OOTB production-grade defaults: every fresh service gets health, metrics,

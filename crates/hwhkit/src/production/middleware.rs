@@ -56,7 +56,10 @@ pub fn apply(router: Router, cfg: &MiddlewareConfig) -> Router {
 
     let mut router = router
         .layer(TraceLayer::new_for_http())
-        .layer(TimeoutLayer::new(Duration::from_secs(cfg.timeout_secs)))
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(cfg.timeout_secs),
+        ))
         .layer(RequestBodyLimitLayer::new(cfg.body_limit_bytes))
         .layer(SetSensitiveHeadersLayer::new(std::iter::once(
             AUTHORIZATION,

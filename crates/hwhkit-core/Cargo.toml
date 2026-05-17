@@ -17,7 +17,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 futures.workspace = true
-hwhkit-config = { version = "0.6.0-alpha.1", path = "../hwhkit-config" }
+hwhkit-config = { version = "0.6.0-alpha.3", path = "../hwhkit-config" }
 parking_lot.workspace = true
 serde.workspace = true
 serde_json.workspace = true

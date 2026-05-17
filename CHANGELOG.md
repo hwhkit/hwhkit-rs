@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project (still pre-1.0) uses informal SemVer: minor bumps may
 contain breaking changes until `1.0`.
 
+## [0.6.0-alpha.3] — 2026-05-16
+
+### Changed (axum 0.8 / async-nats 0.38 upgrade)
+
+- Upgraded `axum` workspace dep `0.7 → 0.8`.
+- Upgraded `tower-http` workspace dep `0.5 → 0.6`; updated
+  `TimeoutLayer::new` → `TimeoutLayer::with_status_code` (arg order
+  changed upstream).
+- Upgraded `async-nats` in `hwhkit-integration-nats` `0.35 → 0.38`.
+- Removed `#[async_trait]` from `Claims`/`CtxClaims` `FromRequestParts`
+  impls — axum 0.8 uses native RPITIT; the macro import is gone.
+
 ## [0.6.0-alpha.2] — 2026-05-16
 
 ### Added — `hwhkit-integration-oss` (Aliyun OSS, 8th integration)
