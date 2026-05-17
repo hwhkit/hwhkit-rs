@@ -1,0 +1,20 @@
+[server]
+host = "127.0.0.1"
+port = 4010
+
+[observability]
+service_name = "runtime-module-mesh"
+environment = "dev"
+
+[mesh.services.profiles]
+mode = "auto"
+protocol = "rpc"
+endpoint = "svc.profiles"
+subject = ""
+serializer = "json"
+timeout_ms = 1500
+
+[transport.rpc]
+enabled = true
+default = "grpc"
+timeout_ms = 1500

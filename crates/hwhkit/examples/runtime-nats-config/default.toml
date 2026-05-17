@@ -1,0 +1,26 @@
+[server]
+host = "127.0.0.1"
+port = 4011
+
+[observability]
+service_name = "runtime-nats-websocket"
+environment = "dev"
+
+[integrations.messaging.nats]
+enabled = true
+required = true
+url = "nats://127.0.0.1:4222"
+
+[mesh.services.events]
+mode = "local"
+protocol = "rpc"
+endpoint = ""
+subject = ""
+serializer = "json"
+timeout_ms = 1500
+
+[transport.websocket]
+enabled = true
+path = "/ws"
+max_connections = 1000
+heartbeat_seconds = 20
