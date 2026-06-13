@@ -1,0 +1,35 @@
+[package]
+name = "hwhkit-integration-llm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "HwhKit LLM integration — multi-provider chat / embeddings over a uniform trait"
+keywords = ["llm", "openai", "anthropic", "ai", "async"]
+categories = ["api-bindings", "asynchronous"]
+readme = "README.md"
+
+[dependencies]
+async-trait.workspace = true
+futures.workspace = true
+hwhkit-config = { version = "0.6.0-alpha.3", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.6.0-alpha.3", path = "../hwhkit-core" }
+reqwest = { workspace = true, features = ["json", "stream", "rustls-tls"] }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["time", "rt"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tracing.workspace = true
+bytes = "1"
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+wiremock = "0.6"
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]

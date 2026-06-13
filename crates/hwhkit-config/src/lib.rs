@@ -590,6 +590,92 @@ pub struct IntegrationsConfig {
     pub neo4j: Neo4jConfig,
     #[serde(default)]
     pub storage: StorageConfig,
+    #[serde(default)]
+    pub llm: LlmIntegrationConfig,
+}
+
+/// `[integrations.llm]` block. Consumed by `hwhkit-integration-llm`.
+///
+/// Defines a uniform LLM client (chat + embeddings) that dispatches to
+/// per-backend hosts based on the model prefix
+/// (`anthropic/...`, `openai/...`, `deepseek/...`, etc.). API keys are
+/// per-backend; the framework does **not** read environment variables
+/// directly — keep secrets in your config layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct LlmIntegrationConfig {
+    /// Whether the integration should be wired at bootstrap.
+    pub enabled: bool,
+    /// If `true` and init fails, bootstrap aborts. If `false`, the
+    /// failure is recorded under `degraded_integrations`.
+    pub required: bool,
+    /// Default model used when callers don't specify one. Must include
+    /// the provider prefix (e.g. `"anthropic/claude-3-5-sonnet-20241022"`).
+    pub default_chat_model: String,
+    /// Default embedding model.
+    pub default_embedding_model: String,
+    /// Default temperature.
+    pub default_temperature: f32,
+    /// Default `max_tokens` cap. `None` means "backend default".
+    #[serde(default)]
+    pub default_max_tokens: Option<u32>,
+    /// Per-call timeout / probe timeout / shutdown budget.
+    #[serde(default)]
+    pub resilience: ResilienceConfig,
+    /// Per-backend credentials and endpoints.
+    #[serde(default)]
+    pub providers: LlmProvidersConfig,
+}
+
+impl Default for LlmIntegrationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            required: true,
+            default_chat_model: String::new(),
+            default_embedding_model: String::new(),
+            default_temperature: 0.7,
+            default_max_tokens: None,
+            resilience: ResilienceConfig::default(),
+            providers: LlmProvidersConfig::default(),
+        }
+    }
+}
+
+/// Per-backend block under `[integrations.llm.providers]`.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct LlmProvidersConfig {
+    #[serde(default)]
+    pub anthropic: LlmProviderCredentials,
+    #[serde(default)]
+    pub openai: LlmProviderCredentials,
+    #[serde(default)]
+    pub deepseek: LlmProviderCredentials,
+    #[serde(default)]
+    pub moonshot: LlmProviderCredentials,
+    #[serde(default)]
+    pub ollama: LlmProviderCredentials,
+}
+
+/// One backend's credentials.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[non_exhaustive]
+pub struct LlmProviderCredentials {
+    /// API key (empty to disable).
+    #[serde(default)]
+    pub api_key: String,
+    /// Override the default base URL. Empty = backend default.
+    #[serde(default)]
+    pub base_url: String,
+}
+
+impl LlmProviderCredentials {
+    /// Returns `true` if this backend has any credential or override
+    /// set, so the bootstrap layer knows to wire it.
+    pub fn is_configured(&self) -> bool {
+        !self.api_key.is_empty() || !self.base_url.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
