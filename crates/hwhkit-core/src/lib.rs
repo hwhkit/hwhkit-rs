@@ -24,6 +24,7 @@ use std::{
     sync::Arc,
 };
 
+pub mod api_response;
 pub mod error;
 pub mod error_response;
 pub mod health;
@@ -33,6 +34,7 @@ pub mod shutdown;
 #[cfg(feature = "multi-tenant")]
 pub mod tenant;
 
+pub use api_response::ApiResponse;
 pub use error::{BoxError, Error, IntegrationFailureKind};
 pub use error_response::{ApiError, ApiResult, FieldError, ProblemDetails};
 pub use health::{HealthCheck, HealthCheckResult, HealthRegistry, HealthStatus};
