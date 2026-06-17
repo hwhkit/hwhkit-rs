@@ -1,6 +1,9 @@
 [package]
 name = "hwhkit"
-version.workspace = true
+# Pinned ahead of the workspace (0.6.0-alpha.3) for a meta-crate-only patch
+# release: graceful-shutdown self-restart fix. Sibling crates are unchanged
+# and stay at alpha.3 (deps below pin them explicitly).
+version = "0.6.0-alpha.4"
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true

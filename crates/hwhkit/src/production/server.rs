@@ -164,23 +164,39 @@ async fn serve(
 
     let drain = Duration::from_secs(built.config().runtime.shutdown.max_drain_secs);
 
-    // The `with_graceful_shutdown` future signals "stop accepting new
-    // connections" the moment it resolves. Resolving immediately on
-    // cancellation (instead of after sleeping for `drain`) is the
-    // semantically correct behaviour: SIGTERM should stop new traffic
-    // straight away, while *inflight* requests get up to `drain`
-    // wall-time to complete via the outer `tokio::time::timeout`.
+    // `with_graceful_shutdown` stops accepting new connections the moment its
+    // future resolves (on cancellation), then lets inflight requests finish.
+    //
+    // The `drain` timeout must bound ONLY the post-cancellation inflight drain
+    // — NOT the whole serve. Wrapping the entire `serve_fut` in
+    // `timeout(drain, …)` (as a previous version did) caps total server uptime
+    // to `max_drain_secs`: with no SIGTERM the future never resolves, the
+    // timeout fires after `drain`, and the process exits — a self-restart loop.
+    //
+    // So: serve until shutdown is requested, and only THEN apply the timeout.
     let trigger = shutdown.clone();
-    let serve_fut = axum::serve(listener, router).with_graceful_shutdown(async move {
-        trigger.cancelled().await;
-        tracing::info!(?drain, "shutdown signalled; bounding inflight drain");
-    });
+    // `WithGracefulShutdown` is `IntoFuture`, not `Future` — materialise the
+    // future so we can poll it by reference under `select!` / `timeout`.
+    let serve_fut = std::future::IntoFuture::into_future(
+        axum::serve(listener, router).with_graceful_shutdown(async move {
+            trigger.cancelled().await;
+        }),
+    );
+    tokio::pin!(serve_fut);
 
-    match tokio::time::timeout(drain, serve_fut).await {
-        Ok(res) => res.map_err(ServeError::Serve),
-        Err(_) => {
-            tracing::warn!(?drain, "drain deadline elapsed; forcing shutdown");
-            Ok(())
+    tokio::select! {
+        // Server ended on its own (bind/accept error, or drained with no signal).
+        res = &mut serve_fut => res.map_err(ServeError::Serve),
+        // Shutdown requested: stop accepting, give inflight up to `drain`, then force.
+        _ = shutdown.cancelled() => {
+            tracing::info!(?drain, "shutdown signalled; bounding inflight drain");
+            match tokio::time::timeout(drain, &mut serve_fut).await {
+                Ok(res) => res.map_err(ServeError::Serve),
+                Err(_) => {
+                    tracing::warn!(?drain, "drain deadline elapsed; forcing shutdown");
+                    Ok(())
+                }
+            }
         }
     }
 }

@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project (still pre-1.0) uses informal SemVer: minor bumps may
 contain breaking changes until `1.0`.
 
+## [0.6.0-alpha.4] — 2026-06-17
+
+Meta-crate-only release (`hwhkit`). Sibling crates are unchanged and remain at
+`0.6.0-alpha.3` (the `hwhkit` deps pin them explicitly).
+
+### Fixed
+
+- **`production::server`: graceful shutdown no longer caps total server
+  uptime.** `serve()` wrapped the *entire* `axum::serve` future in
+  `tokio::time::timeout(max_drain_secs, …)`. Absent a SIGTERM the future never
+  resolves, so the timeout fired after `max_drain_secs` (default **30s**) and
+  the process exited `Ok(())` — under `restart: unless-stopped` an endless
+  self-restart loop, surfacing as intermittent **502s** behind a proxy. The
+  timeout now bounds only the *post-cancellation inflight drain*: the server
+  serves until shutdown is requested, then drains up to `max_drain_secs`.
+  Regression test: `crates/hwhkit/tests/e2e_no_self_terminate.rs`.
+
 ## [0.6.0-alpha.3] — 2026-05-16
 
 ### Changed (axum 0.8 / async-nats 0.38 upgrade)
