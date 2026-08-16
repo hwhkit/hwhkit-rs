@@ -2,14 +2,14 @@
 
 HwhKit 是一个面向 Rust Web 服务的工程化脚手架库，目标是把不变的基础设施沉淀到框架层，让业务项目只保留最小可变部分。
 
-> **0.6.0-alpha.1 — pre-1.0 API stabilization release.** The legacy v1
+> **0.7.0 — pre-1.0 API stabilization release.** The legacy v1
 > surface (`WebServerBuilder`, `JwtAuth`, `hwhkit-macros`,
 > `hwhkit-transport`) has been removed. See
 > [`MIGRATION.md`](../../MIGRATION.md). Use `hwhkit::run_and_serve` and
 > `impl Application for MyApp`. Common imports are at
 > `hwhkit::prelude::*`.
 
-当前仓库已升级为 workspace 架构（`0.6.0-alpha.1`），提供：
+当前仓库已升级为 workspace 架构（`0.7.0`），提供：
 
 1. 单一入口：`hwhkit::run_and_serve` + `Application` trait。
 2. **OOTB Production Defaults** (Tier 1) — 见下方"Production Readiness (Tier 1)"。
@@ -112,7 +112,7 @@ For the smallest possible binary set
 `default-features = false` and pull in only what you need:
 
 ```toml
-hwhkit = { version = "0.6.0-alpha.1", default-features = false, features = [
+hwhkit = { version = "0.7.0", default-features = false, features = [
   "graceful-shutdown",
 ] }
 ```
@@ -130,7 +130,7 @@ hwhkit = { version = "0.6.0-alpha.1", default-features = false, features = [
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 # Default features already provide health/metrics/version/middleware/shutdown/request-id.
-hwhkit = { version = "0.6.0-alpha.1", features = [
+hwhkit = { version = "0.7.0", features = [
   "postgres",
   "redis",
   "mongodb",

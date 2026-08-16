@@ -14,8 +14,8 @@ readme = "README.md"
 
 [dependencies]
 async-trait.workspace = true
-hwhkit-config = { version = "0.6.0-alpha.3", path = "../hwhkit-config" }
-hwhkit-core = { version = "0.6.0-alpha.3", path = "../hwhkit-core" }
+hwhkit-config = { version = "0.7.0", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.7.0", path = "../hwhkit-core" }
 tokio = { workspace = true, features = ["time"] }
 serde.workspace = true
 tracing.workspace = true

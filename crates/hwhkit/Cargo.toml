@@ -1,9 +1,6 @@
 [package]
 name = "hwhkit"
-# Pinned ahead of the workspace (0.6.0-alpha.3) for a meta-crate-only patch
-# release: graceful-shutdown self-restart fix. Sibling crates are unchanged
-# and stay at alpha.3 (deps below pin them explicitly).
-version = "0.6.0-alpha.4"
+version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
@@ -50,19 +47,20 @@ sha2 = { version = "0.10", optional = true }
 base64 = { version = "0.22", optional = true }
 itoa = "1"
 
-hwhkit-buildinfo = { version = "0.6.0-alpha.3", path = "../hwhkit-buildinfo" }
-hwhkit-config = { version = "0.6.0-alpha.3", path = "../hwhkit-config" }
-hwhkit-core = { version = "0.6.0-alpha.3", path = "../hwhkit-core" }
-hwhkit-observability = { version = "0.6.0-alpha.3", path = "../hwhkit-observability" }
-hwhkit-integration-postgres = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-postgres", optional = true }
-hwhkit-integration-redis = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-redis", optional = true }
-hwhkit-integration-mongodb = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-mongodb", optional = true }
-hwhkit-integration-nats = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-nats", optional = true }
-hwhkit-integration-qdrant = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-qdrant", optional = true }
-hwhkit-integration-neo4j = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-neo4j", optional = true }
-hwhkit-integration-s3 = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-s3", optional = true }
-hwhkit-integration-oss = { version = "0.6.0-alpha.3", path = "../hwhkit-integration-oss", optional = true }
-hwhkit-scheduler = { version = "0.6.0-alpha.3", path = "../hwhkit-scheduler", optional = true }
+hwhkit-buildinfo = { version = "0.7.0", path = "../hwhkit-buildinfo" }
+hwhkit-config = { version = "0.7.0", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.7.0", path = "../hwhkit-core" }
+hwhkit-observability = { version = "0.7.0", path = "../hwhkit-observability" }
+hwhkit-integration-llm = { version = "0.7.0", path = "../hwhkit-integration-llm", optional = true }
+hwhkit-integration-postgres = { version = "0.7.0", path = "../hwhkit-integration-postgres", optional = true }
+hwhkit-integration-redis = { version = "0.7.0", path = "../hwhkit-integration-redis", optional = true }
+hwhkit-integration-mongodb = { version = "0.7.0", path = "../hwhkit-integration-mongodb", optional = true }
+hwhkit-integration-nats = { version = "0.7.0", path = "../hwhkit-integration-nats", optional = true }
+hwhkit-integration-qdrant = { version = "0.7.0", path = "../hwhkit-integration-qdrant", optional = true }
+hwhkit-integration-neo4j = { version = "0.7.0", path = "../hwhkit-integration-neo4j", optional = true }
+hwhkit-integration-s3 = { version = "0.7.0", path = "../hwhkit-integration-s3", optional = true }
+hwhkit-integration-oss = { version = "0.7.0", path = "../hwhkit-integration-oss", optional = true }
+hwhkit-scheduler = { version = "0.7.0", path = "../hwhkit-scheduler", optional = true }
 
 [features]
 # OOTB production-grade defaults: every fresh service gets health, metrics,
@@ -84,6 +82,7 @@ qdrant = ["dep:hwhkit-integration-qdrant"]
 neo4j = ["dep:hwhkit-integration-neo4j"]
 s3 = ["dep:hwhkit-integration-s3"]
 oss = ["dep:hwhkit-integration-oss"]
+llm = ["dep:hwhkit-integration-llm"]
 
 # Tier 1 production defaults, each individually opt-out-able:
 health-endpoints = []
@@ -107,7 +106,7 @@ idempotency = ["redis", "dep:redis-client", "dep:sha2", "dep:base64"]
 circuit-breaker = ["dep:reqwest"]
 scheduler = ["dep:hwhkit-scheduler"]
 
-full = ["jwt", "postgres", "redis", "mongodb", "nats", "qdrant", "neo4j", "s3", "oss", "health-endpoints", "metrics", "process-metrics", "version-endpoints", "middleware-bundle", "graceful-shutdown", "request-id", "multi-tenant", "otel", "otel-sqlx", "otel-redis", "otel-reqwest", "migrations", "rate-limit", "idempotency", "circuit-breaker", "scheduler"]
+full = ["jwt", "postgres", "redis", "mongodb", "nats", "qdrant", "neo4j", "s3", "oss", "llm", "health-endpoints", "metrics", "process-metrics", "version-endpoints", "middleware-bundle", "graceful-shutdown", "request-id", "multi-tenant", "otel", "otel-sqlx", "otel-redis", "otel-reqwest", "migrations", "rate-limit", "idempotency", "circuit-breaker", "scheduler"]
 
 [dev-dependencies]
 tempfile = "3.8"

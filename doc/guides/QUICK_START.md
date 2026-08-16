@@ -1,6 +1,6 @@
 # HwhKit 快速开始
 
-5 分钟从零到一个生产级 Rust Web 服务。基于 **0.6.0-alpha.1**。
+5 分钟从零到一个生产级 Rust Web 服务。基于 **0.7.0**。
 
 如果你看到过去版本提到 `WebServerBuilder` / `hwhkit::Config` —— 那是
 v1 API，0.6 已删除。本文档是当前版本的唯一权威入门。
@@ -23,7 +23,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-hwhkit = "0.6.0-alpha.1"
+hwhkit = "0.7.0"
 axum = "0.7"
 tokio = { version = "1", features = ["full"] }
 async-trait = "0.1"
@@ -106,7 +106,7 @@ environment = "dev"
 
 ```toml
 [dependencies]
-hwhkit = { version = "0.6.0-alpha.1", features = ["postgres"] }
+hwhkit = { version = "0.7.0", features = ["postgres"] }
 sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres"] }
 ```
 

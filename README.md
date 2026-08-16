@@ -2,7 +2,7 @@
 
 HwhKit 是一个面向 Rust Web 服务的工程化脚手架库，目标是把不变的基础设施沉淀到框架层，让业务项目只保留最小可变部分。
 
-> **0.6.0-alpha.1 — pre-1.0 API stabilization release.**
+> **0.7.0 — pre-1.0 API stabilization release.**
 > The legacy v1 surface (`WebServerBuilder`, `WebServer`, `Config`,
 > `JwtAuth`, `hwhkit-macros`, `hwhkit-transport`) has been removed.
 > See [`MIGRATION.md`](./MIGRATION.md) for the upgrade path and
@@ -10,7 +10,7 @@ HwhKit 是一个面向 Rust Web 服务的工程化脚手架库，目标是把不
 > The recommended entry point is `hwhkit::run_and_serve` driven by
 > an `Application` impl; the prelude lives at `hwhkit::prelude::*`.
 
-当前仓库已升级为 workspace 架构（`0.6.0-alpha.1`），提供：
+当前仓库已升级为 workspace 架构（`0.7.0`），提供：
 
 1. 单一 OOTB 入口：`hwhkit::run_and_serve` + `Application` trait。
 2. **OOTB Production Defaults (Tier 1)**: `/health`、`/health/ready`、`/metrics`（含进程级 RSS/CPU/FD/线程）、`/version`、`/info`、graceful shutdown、request-id、标准中间件束 — 默认 feature 开启即生效。
@@ -116,7 +116,7 @@ async fn main() -> std::result::Result<(), Box<dyn std::error::Error + Send + Sy
 async-trait = "0.1"
 tokio = { version = "1", features = ["full"] }
 axum = "0.7"
-hwhkit = { version = "0.6.0-alpha.1", features = [
+hwhkit = { version = "0.7.0", features = [
   "postgres",
   "redis",
   "scheduler",

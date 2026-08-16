@@ -21,6 +21,7 @@ pub fn runtime_features() -> RuntimeFeatures {
         .enable_if("neo4j", cfg!(feature = "neo4j"))
         .enable_if("s3", cfg!(feature = "s3"))
         .enable_if("oss", cfg!(feature = "oss"))
+        .enable_if("llm", cfg!(feature = "llm"))
 }
 
 #[allow(clippy::vec_init_then_push)]
@@ -44,6 +45,8 @@ pub fn default_providers() -> Vec<Arc<dyn IntegrationProvider>> {
     providers.push(Arc::new(hwhkit_integration_s3::S3Provider));
     #[cfg(feature = "oss")]
     providers.push(Arc::new(hwhkit_integration_oss::OssProvider));
+    #[cfg(feature = "llm")]
+    providers.push(Arc::new(hwhkit_integration_llm::LlmProvider));
 
     providers
 }

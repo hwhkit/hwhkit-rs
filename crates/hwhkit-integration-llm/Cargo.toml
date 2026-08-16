@@ -15,8 +15,8 @@ readme = "README.md"
 [dependencies]
 async-trait.workspace = true
 futures.workspace = true
-hwhkit-config = { version = "0.6.0-alpha.3", path = "../hwhkit-config" }
-hwhkit-core = { version = "0.6.0-alpha.3", path = "../hwhkit-core" }
+hwhkit-config = { version = "0.7.0", path = "../hwhkit-config" }
+hwhkit-core = { version = "0.7.0", path = "../hwhkit-core" }
 reqwest = { workspace = true, features = ["json", "stream", "rustls-tls"] }
 serde.workspace = true
 serde_json.workspace = true

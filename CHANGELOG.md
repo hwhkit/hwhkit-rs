@@ -6,6 +6,37 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and the project (still pre-1.0) uses informal SemVer: minor bumps may
 contain breaking changes until `1.0`.
 
+## [0.7.0] — 2026-08-16
+
+First unified non-alpha release of the `0.6` line. The whole workspace and
+the `hwhkit` facade now ship one shared version instead of the facade being
+pinned ahead of its sibling crates (`0.6.0-alpha.4` vs `0.6.0-alpha.3`).
+
+### Changed
+
+- **Single-version workspace.** `[workspace.package] version` is now the one
+  source of truth (`0.7.0`); the `hwhkit` facade switched back to
+  `version.workspace = true` and all sibling `path` dependency pins moved
+  from `0.6.0-alpha.3` to `0.7.0`. No more meta-crate-only skew.
+
+### Added
+
+- **`hwhkit-integration-llm` is now wired into the facade.** The crate has
+  existed since the `0.6.0-alpha.4` cycle (config in `hwhkit-config`, crate in
+  the workspace) but was not reachable through `hwhkit`. It is now exposed as
+  the opt-in `llm` feature: `hwhkit::llm::{LlmHandle, LlmProvider, ...}`,
+  registered in `runtime_features()` / `default_providers()` /
+  `known_features()`, and included in the `full` feature.
+- **`ApiResponse<T>` envelope** (`hwhkit_core::ApiResponse`) — `{code, message,
+  data, trace_id}`, matching the hwhkit-py / hwhkit-go contract, and used to
+  normalize integration responses.
+
+### Removed
+
+- **`hwhkit-transport` dead crate.** The leftover `crates/hwhkit-transport/`
+  directory (not a workspace member since the `0.6` transport removal) is
+  gone.
+
 ## [0.6.0-alpha.4] — 2026-06-17
 
 Meta-crate-only release (`hwhkit`). Sibling crates are unchanged and remain at

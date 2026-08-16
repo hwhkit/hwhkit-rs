@@ -61,7 +61,7 @@ impl ChatMessage {
 
 /// Optional knobs for a chat call. `Default` is a safe choice on every
 /// backend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub struct ChatRequestOptions {
     /// Model identifier, including provider prefix
@@ -75,17 +75,6 @@ pub struct ChatRequestOptions {
     /// Optional stop sequences.
     #[serde(default)]
     pub stop: Vec<String>,
-}
-
-impl Default for ChatRequestOptions {
-    fn default() -> Self {
-        Self {
-            model: None,
-            temperature: None,
-            max_tokens: None,
-            stop: Vec::new(),
-        }
-    }
 }
 
 /// Successful (non-streaming) chat response.

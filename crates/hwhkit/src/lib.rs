@@ -70,6 +70,8 @@ pub use hwhkit_config as config;
 pub use hwhkit_core as core;
 pub use hwhkit_observability as observability;
 
+#[cfg(feature = "llm")]
+pub use hwhkit_integration_llm as llm;
 #[cfg(feature = "mongodb")]
 pub use hwhkit_integration_mongodb as mongodb;
 #[cfg(feature = "nats")]
